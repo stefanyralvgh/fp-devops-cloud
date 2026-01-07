@@ -3,11 +3,11 @@
 **Project:** Cloud Migration with Terraform & Ansible  
 **Cloud Provider:** AWS  
 **Environments:** QA, Production  
-**Last Updated:** January 6, 2026
+**Last Updated:** January 7, 2026
 
 ---
 
-## Infrastructure as Code Strategy
+## Infrastructure as Code
 
 ### Decision: Terraform as Primary IaC Tool
 
@@ -48,51 +48,54 @@ Store Terraform state remotely in S3 with DynamoDB-based locking mechanism.
   - Purpose: Prevent concurrent state modifications
   - Billing Mode: `PAY_PER_REQUEST`
 
-**Justification:**
-
-- **Collaboration:** Prevents team members from stepping on each other's work
-- **Durability:** S3 provides 99.999999999% durability
-- **Versioning:** Enables rollback if state corruption occurs
-- **Security:** Encryption and access controls protect sensitive data
-- **Cost:** Both services fall within AWS free tier limits for project scope
-
-**Cost Analysis:**
-
-```
-DynamoDB Free Tier: 1M writes + 2.5M reads/month
-Estimated Project Usage: ~500 operations total
-Projected Cost: $0.00
-
-S3 Free Tier: 5GB storage + 20,000 GET requests
-Estimated State Size: <10MB
-Projected Cost: $0.00
-```
-
-**Alternative Considered:**  
-Local state management was rejected due to collaboration requirements and lack of locking mechanism.
-
----
-
-Upcoming cost considerations for evaluator review:
-
-- **NAT Gateway:** Required for private subnet internet access (~$32/month, NOT free tier)
-  - Will justify in subsequent decision log when implementing networking module
-- **EC2/RDS:** Will use t2.micro/t3.micro to stay within 750 hours/month free tier
-
----
-
 ## References
 
 - [Terraform Backend Configuration - HashiCorp](https://developer.hashicorp.com/terraform/language/settings/backends/s3)
 - [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html)
-- [Terraform Workspaces - HashiCorp](https://developer.hashicorp.com/terraform/cli/workspaces)
 - [Managing Terraform State in AWS - AWS DevOps Blog](https://aws.amazon.com/blogs/devops/best-practices-for-managing-terraform-state-files-in-aws-ci-cd-pipeline/)
 
 ---
 
-## Decision Log Timeline
+## Terraform Configuration - Day 2
 
-- **Day 1 (Jan 6):** Backend strategy, environment separation, repository structure
-- **Day 2+:** Infrastructure module decisions (pending)
+**Workspace Strategy:**
 
----
+- Created workspaces: `qa`, `prod`
+- Each workspace maintains independent state file in S3
+- State path pattern: `env:/{workspace}/terraform.tfstate`
+- Default workspace not used (using explicit qa/prod only)
+
+**Validation:**
+
+```bash
+terraform init
+terraform workspace list
+terraform validate
+```
+
+### Decision: AWS Provider Configuration
+
+**Implementation:**
+
+- Provider version: ~> 5.0 (latest stable)
+- Region: us-east-1 (consistent with free tier optimization)
+- Default tags applied to all resources:
+  - Project: movie-analyst-migration
+  - ManagedBy: terraform
+  - Environment: [workspace name]
+
+**Justification:**
+
+- Version constraint (~> 5.0) allows minor updates, prevents breaking changes
+- Default tags ensure consistent resource labeling
+- Environment tag dynamically reflects workspace (qa/prod)
+- Simplifies cost tracking and resource management
+
+### Decision: Variable Structure
+
+**Implementation:**
+
+- Core variables defined: region, project_name, environment, vpc_cidr
+- Common tags map for consistent labeling
+- Defaults provided for rapid development
+- Can be overridden via tfvars for prod
