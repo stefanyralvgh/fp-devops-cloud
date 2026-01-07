@@ -4,7 +4,8 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
-.terraform.lock.hcl
+*.tfplan
+tfplan*
 crash.log
 
 # Ansible
