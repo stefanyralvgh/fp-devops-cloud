@@ -19,8 +19,8 @@ module "networking" {
   database_subnet_cidrs = var.database_subnet_cidrs
 
   # NAT Gateway configuration
-  enable_nat_gateway  = var.enable_nat_gateway
-  single_nat_gateway  = var.single_nat_gateway
+  enable_nat_gateway = var.enable_nat_gateway
+  single_nat_gateway = var.single_nat_gateway
 
   # Tags
   tags = var.common_tags
