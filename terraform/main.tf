@@ -25,3 +25,15 @@ module "networking" {
   # Tags
   tags = var.common_tags
 }
+
+
+# SECURITY GROUPS MODULE
+
+module "security" {
+  source = "./modules/security"
+
+  vpc_id      = module.networking.vpc_id
+  environment = terraform.workspace
+  my_ip       = "190.158.28.120/32"
+  vpc_cidr    = var.vpc_cidr
+}

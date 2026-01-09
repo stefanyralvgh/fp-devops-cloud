@@ -35,3 +35,31 @@ output "nat_gateway_ip" {
   description = "NAT Gateway public IP"
   value       = module.networking.nat_gateway_ip
 }
+
+# SECURITY OUTPUTS
+# ============================================
+
+output "bastion_sg_id" {
+  description = "Bastion Security Group ID"
+  value       = module.security.bastion_sg_id
+}
+
+output "alb_sg_id" {
+  description = "ALB Security Group ID"
+  value       = module.security.alb_sg_id
+}
+
+output "frontend_sg_id" {
+  description = "Frontend Security Group ID"
+  value       = module.security.frontend_sg_id
+}
+
+output "backend_sg_id" {
+  description = "Backend Security Group ID"
+  value       = module.security.backend_sg_id
+}
+
+output "rds_sg_id" {
+  description = "RDS Security Group ID"
+  value       = module.security.rds_sg_id
+}
