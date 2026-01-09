@@ -592,3 +592,452 @@ aws s3 ls s3://<bucket>/ --recursive
 ```
 
 ---
+
+## Day 5 - January 9, 2026
+
+**Status:** ✅ Complete | **Branch:** develop
+
+### What I Did
+
+#### 1. Security Groups Module Structure
+
+Created security module with comprehensive security controls:
+
+```bash
+terraform/modules/security/
+├── main.tf       # 5 Security Groups (Bastion, ALB, Frontend, Backend, RDS)
+├── variables.tf  # Module inputs (vpc_id, environment, my_ip, vpc_cidr)
+└── outputs.tf    # SG IDs for reference by other modules
+```
+
+#### 2. Security Groups Created
+
+**5 Security Groups implemented:**
+
+1. **Bastion SG:** SSH access only from my IP (190.158.28.120/32)
+2. **ALB SG:** HTTP/HTTPS from internet (0.0.0.0/0)
+3. **Frontend SG:** HTTP from ALB, SSH from Bastion
+4. **Backend SG:** Port 3000 from ALB, SSH from Bastion
+5. **RDS SG:** MySQL (3306) from Backend only
+
+#### 3. Module Integration
+
+- Integrated security module into root `main.tf`
+- Referenced networking outputs (vpc_id, vpc_cidr)
+- Used workspace variable for environment tagging
+- Exposed all SG IDs via outputs for future module consumption
+
+#### 4. Deployment
+
+```bash
+terraform init       # Installed security module
+terraform fmt        # Formatted all files
+terraform validate   # Validated configuration
+terraform plan       # Reviewed 5 resources to create
+terraform apply      # Successfully deployed all SGs
+```
+
+**Result:** All 5 Security Groups created successfully in AWS ✅
+
+---
+
+### Key Learnings (Security Concepts)
+
+#### 1. Security Groups vs Network ACLs
+
+**What I learned:**
+
+- **Security Groups:** Stateful, resource-level, allow-only rules
+- **Network ACLs:** Stateless, subnet-level, allow/deny rules
+- **This project uses:** Only Security Groups (simpler, sufficient)
+
+**Mental model:** SG = bodyguard for each person (EC2), NACL = checkpoint at building entrance (subnet)
+
+---
+
+#### 2. Stateful Nature of Security Groups
+
+**Initial confusion:** Why no explicit outbound rule for SSH responses?
+
+**What I learned:**
+
+- **Stateful = automatic return traffic**
+- Example: SSH connection initiates on port 22 → response automatically allowed back
+- Only need to define the initial connection direction
+- Egress 0.0.0.0/0 allows instances to initiate outbound connections
+
+**Key insight:** If you allow inbound SSH, responses go out automatically. If you allow outbound HTTPS, responses come in automatically.
+
+---
+
+#### 3. CIDR Blocks vs Security Group References
+
+**Confusion:** When to use `cidr_blocks` vs `security_groups` in rules?
+
+**What I learned:**
+
+| Use Case                 | Use                                           | Example                          |
+| ------------------------ | --------------------------------------------- | -------------------------------- |
+| **Internet traffic**     | `cidr_blocks = ["0.0.0.0/0"]`                 | ALB accepting HTTP from anywhere |
+| **My computer**          | `cidr_blocks = ["190.158.28.120/32"]`         | SSH to Bastion from my IP        |
+| **AWS resource traffic** | `security_groups = [aws_security_group.x.id]` | Backend accepting from ALB       |
+
+**Why use security_groups reference:**
+
+- Don't need to know IP addresses of ALB/instances
+- Automatically works even if IPs change
+- More maintainable (one place to update)
+- AWS resolves this internally
+
+**Real example:**
+
+```hcl
+# ❌ Bad: What if ALB IP changes?
+cidr_blocks = ["10.0.1.50/32"]
+
+# ✅ Good: References SG, works with any IP
+security_groups = [aws_security_group.alb.id]
+```
+
+---
+
+#### 4. Understanding Port Specifications
+
+**Confusion:** What do `from_port` and `to_port` actually mean?
+
+**What I learned:**
+
+- **from_port / to_port:** Defines the port RANGE on the destination
+- **NOT:** client port → server port
+- **Port 22 (SSH):** Both from/to = 22 (single port)
+- **Port range example:** from_port = 8000, to_port = 8999 (allow any port in range)
+
+**Common pattern:**
+
+```hcl
+from_port = 3000
+to_port   = 3000
+# Means: "Allow access TO port 3000 on the destination"
+```
+
+**Why port ranges exist:**
+
+- Some apps use multiple ports
+- Example: FTP uses 20-21, passive mode uses 1024-65535
+- Our app: Single port (3000) so from = to
+
+---
+
+#### 5. Protocol Field
+
+**Confusion:** Why always `protocol = "tcp"`?
+
+**What I learned:**
+
+**Common protocols:**
+
+- `"tcp"`: HTTP, HTTPS, SSH, MySQL (most application traffic)
+- `"udp"`: DNS, video streaming, VoIP
+- `"icmp"`: Ping, network diagnostics
+- `"-1"`: All protocols (used in egress rules)
+
+**Our security groups:**
+
+- SSH (22): TCP
+- HTTP (80): TCP
+- HTTPS (443): TCP
+- MySQL (3306): TCP
+- Node.js (3000): TCP
+- Egress (all): -1 (all protocols)
+
+**Why TCP dominates:**
+
+- Reliable connection (handshake, acknowledgments)
+- Required for HTTP/HTTPS/SSH/databases
+- Industry standard for web applications
+
+---
+
+#### 6. Security Group Scope
+
+**Questions I had:**
+
+- Where does a Security Group "live"?
+- Can I use an SG across VPCs?
+- Is SG attached to subnet or resource?
+
+**What I learned:**
+
+```
+AWS Account
+└── Region (us-east-1)
+    └── VPC (10.0.0.0/16)
+        ├── Security Group 1 ← Lives at VPC level
+        ├── Security Group 2
+        └── Subnets
+            └── EC2 instances ← SG attached here
+```
+
+**Key facts:**
+
+- SG belongs to a VPC (can't be used in other VPCs)
+- SG is attached to ENI (Elastic Network Interface) of resource
+- One resource can have multiple SGs (combined rules)
+- SG rules apply regardless of which subnet resource is in
+
+**Mental model:** VPC = building ownership, SG = employee badge (works in any floor)
+
+---
+
+#### 7. Implicit Deny
+
+**Confusion:** Why no explicit "deny" rules?
+
+**What I learned:**
+
+**Security Group logic:**
+
+- Default: Deny everything
+- Rules: Add specific allows
+- No traffic passes unless explicitly allowed
+
+**Example:**
+
+```hcl
+# This SG ONLY allows SSH from my IP
+ingress {
+  from_port   = 22
+  to_port     = 22
+  protocol    = "tcp"
+  cidr_blocks = ["190.158.28.120/32"]
+}
+
+# Implicit denies:
+# ❌ Port 80 from anywhere
+# ❌ Port 22 from other IPs
+# ❌ Any other port
+```
+
+**Why no deny rules:**
+
+- Simpler mental model (whitelist only)
+- Less risk of misconfiguration
+- Default-deny is more secure
+- If you need deny: use Network ACLs instead
+
+---
+
+#### 8. Building Analogy - Final Version
+
+**Confusion:** How do NAT, SGs, ALB, and Bastion all fit together?
+
+**Complete building model:**
+
+| AWS Resource         | Building Analogy            | Function                                 |
+| -------------------- | --------------------------- | ---------------------------------------- |
+| **VPC**              | The building                | Your private space                       |
+| **Subnets**          | Floors                      | Public (lobby) vs Private (offices)      |
+| **Route Tables**     | Building directory          | "To go outside, use front door"          |
+| **Internet Gateway** | Front door                  | Exit to street (internet)                |
+| **NAT Gateway**      | Receptionist with phone     | Makes outbound calls for private offices |
+| **Security Groups**  | Badge scanners at each door | Who can enter each specific room         |
+| **ALB**              | Reception desk              | Directs visitors to correct office       |
+| **Bastion Host**     | Maintenance entrance        | IT staff access point                    |
+
+**Traffic flow example (User → Backend):**
+
+1. User enters building (IGW)
+2. Reception desk checks badge (ALB SG: allows HTTP)
+3. Receptionist directs to Backend floor (ALB routes)
+4. Backend office door scans badge (Backend SG: allows from ALB)
+5. Backend needs to download package:
+   - Walks to receptionist (NAT)
+   - Receptionist makes call (NAT to internet)
+   - Receptionist brings package back (NAT to Backend)
+
+**Key insight:** Each component has ONE job:
+
+- IGW: Building entrance/exit
+- NAT: Outbound proxy for private resources
+- SG: Door access control
+- ALB: Traffic distribution
+- Bastion: Admin access point
+
+---
+
+### Challenges and Solutions
+
+#### Challenge 1: Understanding Security Group References
+
+**Problem:** Confused about when to use IP vs SG reference in rules
+
+**Solution:**
+
+- **External traffic:** Use CIDR (internet, my IP)
+- **Internal AWS traffic:** Use SG reference (ALB → Backend)
+- **Why:** SG references work even when IPs change
+
+---
+
+#### Challenge 2: Workspace vs Environment Directory Structure
+
+**Problem:** Had `environments/qa/` and `environments/prod/` directories but also using workspaces
+
+**Decision:** Keep main.tf in root, use workspaces for environment switching
+
+**Justification:**
+
+- DRY principle: Single codebase for both environments
+- Workspaces designed for this exact use case
+- Less maintenance: Changes apply to both environments
+- Simpler for small projects where QA/PROD are nearly identical
+
+**When to use separate directories:**
+
+- Drastically different configurations per environment
+- Different module versions per environment
+- Separate state management systems
+
+---
+
+#### Challenge 3: Output Strategy
+
+**Problem:** Which outputs to expose from security module?
+
+**Solution:** Export all 5 SG IDs for future module consumption
+
+**Why:**
+
+- Compute module will need: bastion_sg_id, frontend_sg_id, backend_sg_id
+- Database module will need: rds_sg_id
+- Load balancer module will need: alb_sg_id
+- Better to export now than refactor later
+
+---
+
+### Commands Used
+
+```bash
+# Module creation
+mkdir -p terraform/modules/security
+touch terraform/modules/security/{main,variables,outputs}.tf
+
+# Terraform workflow
+terraform init          # Install security module
+terraform fmt -recursive # Format all files
+terraform validate      # Check syntax
+terraform plan          # Preview changes (5 to add)
+terraform apply         # Deploy (took ~2 minutes)
+
+# Verification
+terraform state list    # List all resources
+terraform output        # View module outputs
+aws ec2 describe-security-groups --query 'SecurityGroups[?contains(GroupName, `qa-`)].GroupName' # Verify in AWS
+```
+
+---
+
+### Files Created/Modified
+
+**Created:**
+
+```
+terraform/modules/security/main.tf       # 5 Security Groups
+terraform/modules/security/variables.tf  # Module inputs
+terraform/modules/security/outputs.tf    # Module outputs (5 SG IDs)
+```
+
+**Modified:**
+
+```
+terraform/main.tf          # Added security module call
+terraform/outputs.tf       # Added security outputs (optional)
+docs/decisiones-tecnicas.md # (Will update separately)
+docs/DAILY_LOG.md          # This document
+```
+
+---
+
+### Infrastructure Created
+
+**5 AWS Security Groups:**
+
+1. **qa-bastion-sg**
+
+   - Ingress: SSH (22) from 190.158.28.120/32
+   - Egress: All traffic
+
+2. **qa-alb-sg**
+
+   - Ingress: HTTP (80), HTTPS (443) from 0.0.0.0/0
+   - Egress: All traffic
+
+3. **qa-frontend-sg**
+
+   - Ingress: HTTP (80) from ALB SG, SSH (22) from Bastion SG
+   - Egress: All traffic
+
+4. **qa-backend-sg**
+
+   - Ingress: Port 3000 from ALB SG, SSH (22) from Bastion SG
+   - Egress: All traffic
+
+5. **qa-rds-sg**
+   - Ingress: MySQL (3306) from Backend SG
+   - Egress: All traffic
+
+**Cost Impact:** Security Groups are free (no additional cost)
+
+---
+
+### Key Decisions Made
+
+1. **Stateful Security Groups only:** No Network ACLs (simpler, sufficient)
+2. **Security Group references over IPs:** More maintainable for internal traffic
+3. **Egress allow-all:** Standard practice (restrictive egress rarely needed)
+4. **Single IP for Bastion access:** My public IP only (190.158.28.120/32)
+5. **Port 3000 for Backend:** Based on Node.js app configuration
+6. **Workspace-based environment:** Keep main.tf in root, not in environment directories
+
+---
+
+### Next Steps (Day 6-7)
+
+**Compute Module - Bastion Host:**
+
+- [ ] Create `modules/compute/` structure
+- [ ] Generate SSH key pair (.pem file)
+- [ ] Create Bastion Host (t2.micro, public subnet, Elastic IP)
+- [ ] Test SSH connection from Windows
+- [ ] Install Ansible on Bastion
+
+**Estimated time:** 2-3 hours
+
+---
+
+### Study Notes for Presentation
+
+**Security Group concepts to remember:**
+
+- Stateful = return traffic automatic
+- Default deny, explicit allow only
+- VPC-scoped, resource-attached
+- CIDR for external, SG reference for internal
+- Protocol: TCP for most app traffic, -1 for all
+
+**Questions evaluator might ask:**
+
+1. "Why no deny rules in SGs?" → Default deny, whitelist approach more secure
+2. "Why reference ALB SG instead of CIDR?" → IPs change, SG reference auto-updates
+3. "What's the difference between SG and NACL?" → Stateful vs stateless, resource vs subnet level
+4. "Why allow all egress?" → Standard practice, restrictive egress rarely needed, enables updates/patches
+5. "How do workspaces relate to security?" → Same SG rules, different names (qa-_ vs prod-_)
+
+**Architecture understanding:**
+
+- Traffic flow: Internet → IGW → ALB → Backend → RDS
+- Security layers: SG at each hop (defense in depth)
+- Bastion pattern: Jump host for SSH access to private resources
+- Least privilege: Only allow minimum necessary access
+
+---

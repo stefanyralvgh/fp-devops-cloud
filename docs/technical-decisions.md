@@ -3,7 +3,7 @@
 **Project:** Cloud Migration with Terraform & Ansible  
 **Cloud Provider:** AWS  
 **Environments:** QA, Production  
-**Last Updated:** January 8, 2026
+**Last Updated:** January 9, 2026
 
 ---
 
@@ -47,12 +47,6 @@ Store Terraform state remotely in S3 with DynamoDB-based locking mechanism.
   - Partition Key: `LockID` (String)
   - Purpose: Prevent concurrent state modifications
   - Billing Mode: `PAY_PER_REQUEST`
-
-## References
-
-- [Terraform Backend Configuration - HashiCorp](https://developer.hashicorp.com/terraform/language/settings/backends/s3)
-- [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html)
-- [Managing Terraform State in AWS - AWS DevOps Blog](https://aws.amazon.com/blogs/devops/best-practices-for-managing-terraform-state-files-in-aws-ci-cd-pipeline/)
 
 ---
 
@@ -480,3 +474,370 @@ terraform apply
 # End Work Session
 terraform destroy
 ```
+
+## Security Architecture
+
+### Decision: Security Groups as Primary Network Security Control
+
+**Context:**  
+AWS provides two network security mechanisms: Security Groups (stateful, resource-level) and Network ACLs (stateless, subnet-level). The application requires protection at multiple layers while maintaining simplicity and manageability.
+
+**Decision:**  
+Use Security Groups exclusively for network security. Do not implement Network ACLs.
+
+**Implementation:**
+
+Created 5 Security Groups with defense-in-depth strategy:
+
+#### 1. Bastion Security Group
+
+```hcl
+Purpose: SSH access point for infrastructure management
+Ingress: SSH (22) from administrator IP only (190.158.28.120/32)
+Egress: All traffic (enables package installation, updates)
+```
+
+**Justification:**
+
+- Single controlled entry point for SSH access
+- IP whitelist prevents unauthorized access attempts
+- Reduces attack surface (only one public SSH endpoint)
+- Standard bastion host pattern
+
+---
+
+#### 2. Application Load Balancer Security Group
+
+```hcl
+Purpose: Accept HTTP/HTTPS traffic from internet
+Ingress: HTTP (80) and HTTPS (443) from 0.0.0.0/0
+Egress: All traffic (enables communication with backend)
+```
+
+**Justification:**
+
+- Public-facing entry point for application
+- Standard web ports (80, 443)
+- HTTPS included for future SSL implementation
+- No SSH access (not needed for managed service)
+
+---
+
+#### 3. Frontend Security Group
+
+```hcl
+Purpose: Web server instances
+Ingress:
+  - HTTP (80) from ALB Security Group
+  - SSH (22) from Bastion Security Group
+Egress: All traffic
+```
+
+**Justification:**
+
+- Only ALB can send traffic to frontend (prevents direct internet access)
+- SSH only from Bastion (least privilege access)
+- Uses Security Group reference instead of CIDR (automatic IP resolution)
+
+---
+
+#### 4. Backend Security Group
+
+```hcl
+Purpose: Node.js API instances
+Ingress:
+  - Port 3000 from ALB Security Group
+  - SSH (22) from Bastion Security Group
+Egress: All traffic
+```
+
+**Port 3000 Justification:**
+
+- Node.js application listens on port 3000 (configured in server.js)
+- `app.listen(process.env.PORT || 3000)`
+- Standard Node.js development port
+
+**Security considerations:**
+
+- Backend never directly exposed to internet
+- Only ALB can communicate with application port
+- SSH restricted to Bastion only
+- Egress allows npm package downloads, OS updates
+
+---
+
+#### 5. RDS Security Group
+
+```hcl
+Purpose: MySQL database
+Ingress: MySQL (3306) from Backend Security Group only
+Egress: All traffic
+```
+
+**Justification:**
+
+- Strictest security: Only backend instances can access database
+- No SSH (RDS is managed service)
+- No direct access from frontend, Bastion, or internet
+- Egress allows AWS management traffic (patches, backups)
+
+---
+
+### Decision: Security Group References Over CIDR Blocks
+
+**Context:**  
+Security Group rules can specify allowed sources using either CIDR blocks (IP ranges) or references to other Security Groups.
+
+**Decision:**  
+Use Security Group references for all internal AWS resource communication. Use CIDR blocks only for external traffic (internet, administrator IP).
+
+**Implementation Examples:**
+
+```hcl
+# ✅ Internal traffic: Use SG reference
+ingress {
+  description     = "Node.js app from ALB"
+  from_port       = 3000
+  to_port         = 3000
+  protocol        = "tcp"
+  security_groups = [aws_security_group.alb.id]
+}
+
+# ✅ External traffic: Use CIDR
+ingress {
+  description = "SSH from administrator"
+  from_port   = 22
+  to_port     = 22
+  protocol    = "tcp"
+  cidr_blocks = ["190.158.28.120/32"]
+}
+```
+
+**Justification:**
+
+- **Maintainability:** IPs change (especially for ALB, EC2), SG references auto-update
+- **Clarity:** Makes traffic flow explicit (Backend accepts from ALB, not random IPs)
+- **AWS best practice:** Recommended pattern in AWS documentation
+- **No IP management:** Don't need to track and update specific IPs
+
+**Trade-off:**
+
+- Slightly more complex Terraform dependencies
+- But: Worth it for long-term maintainability
+
+---
+
+### Decision: Stateful Security Groups (No Network ACLs)
+
+**Context:**  
+AWS offers two layers of network security:
+
+- Security Groups: Stateful, allow-only, resource-level
+- Network ACLs: Stateless, allow/deny, subnet-level
+
+**Alternatives Considered:**
+
+| Option                   | Complexity | Use Case                | Selected |
+| ------------------------ | ---------- | ----------------------- | -------- |
+| **Security Groups only** | Low        | Most applications       | ✅ Yes   |
+| SGs + NACLs              | High       | Compliance requirements | ❌ No    |
+| NACLs only               | Medium     | Legacy patterns         | ❌ No    |
+
+**Decision:**  
+Use Security Groups exclusively. Do not implement Network ACLs.
+
+**Justification:**
+
+**Stateful behavior:**
+
+- Automatic return traffic (if you allow inbound SSH, responses automatically allowed)
+- Simpler rule set (half the rules needed vs stateless)
+- Less error-prone (no need to manage bidirectional rules)
+
+**Example:**
+
+```
+Stateful SG:
+- Allow inbound SSH (22) → Outbound responses automatic ✅
+
+Stateless NACL would require:
+- Allow inbound SSH (22)
+- Allow outbound ephemeral ports (1024-65535) ← Extra complexity
+```
+
+**Why not Network ACLs:**
+
+- SGs provide sufficient security for this application
+- NACLs add complexity without security benefit
+- Harder to troubleshoot (must check both SG and NACL)
+- NACLs support deny rules, but default-deny SGs achieve same goal
+- No compliance requirement for subnet-level controls
+
+**When NACLs are needed:**
+
+- Regulatory compliance (explicit deny rules required)
+- DDoS protection (deny specific IP ranges)
+- Defense in depth for highly sensitive data
+- Not applicable to this project
+
+---
+
+### Decision: Egress Allow-All Policy
+
+**Context:**  
+Security Groups can restrict outbound traffic from resources. The default is allow-all egress.
+
+**Decision:**  
+Allow all outbound traffic (0.0.0.0/0 on all protocols) for all Security Groups.
+
+**Implementation:**
+
+```hcl
+egress {
+  description = "Allow all outbound traffic"
+  from_port   = 0
+  to_port     = 0
+  protocol    = "-1"
+  cidr_blocks = ["0.0.0.0/0"]
+}
+```
+
+**Justification:**
+
+**Operational requirements:**
+
+- Package managers (npm, yum) need to reach external repositories
+- OS updates require access to update servers
+- Application may need to call external APIs
+- RDS needs to communicate with AWS services (backups, patches)
+
+**Security considerations:**
+
+- Risk of data exfiltration exists BUT:
+- Restrictive egress is operationally expensive
+- Difficult to maintain (constantly updating allow lists)
+- Application-layer controls (IAM, encryption) more effective
+- Standard practice for most organizations
+
+**Why restrictive egress is rare:**
+
+- Requires exhaustive list of all external dependencies
+- Breaks whenever dependencies change or add CDNs
+- Maintenance burden outweighs security benefit
+- Better addressed with:
+  - VPC Flow Logs (monitor unexpected traffic)
+  - AWS GuardDuty (detect anomalies)
+  - CloudWatch alarms (alert on unusual patterns)
+
+**When to restrict egress:**
+
+- PCI DSS compliance (card data environment)
+- HIPAA requirements (healthcare data)
+- Zero-trust architecture
+- Not applicable to this project
+
+---
+
+### Decision: Workspace-Based Environment Isolation
+
+**Context:**  
+Security Groups must be tagged with environment (QA, Production). Two approaches exist:
+
+1. Separate code in `environments/qa/` and `environments/prod/`
+2. Single codebase with Terraform workspaces
+
+**Decision:**  
+Use Terraform workspaces with single codebase in root directory.
+
+**Implementation:**
+
+```hcl
+# main.tf (root)
+module "security" {
+  source      = "./modules/security"
+  environment = terraform.workspace  # "qa" or "prod"
+  # ... other variables
+}
+```
+
+**Result:**
+
+```bash
+terraform workspace select qa   → Creates qa-bastion-sg, qa-alb-sg, etc.
+terraform workspace select prod → Creates prod-bastion-sg, prod-alb-sg, etc.
+```
+
+**Justification:**
+
+- **DRY principle:** Single codebase, no duplication
+- **Consistency:** QA and Prod use identical security rules
+- **Simplicity:** One place to update security policies
+- **Less drift:** No risk of QA/Prod configurations diverging
+- **Terraform native:** Workspaces designed for this use case
+
+**Trade-offs accepted:**
+
+- Risk of applying changes to wrong workspace (mitigated with careful workflow)
+- Less flexibility for radically different configurations
+- Acceptable for this project (QA and Prod are nearly identical)
+
+**Alternative approach (when to use):**
+
+- Separate directories when environments have fundamentally different:
+  - Network architectures
+  - Security policies
+  - Compliance requirements
+  - Module versions
+
+---
+
+### Security Best Practices Implemented
+
+**Defense in Depth:**
+
+- Multiple security layers (SG at each resource level)
+- No single point of failure in security model
+- ALB → Frontend/Backend → RDS (each protected)
+
+**Least Privilege:**
+
+- Bastion: Only SSH, only from admin IP
+- Frontend: Only HTTP from ALB, SSH from Bastion
+- Backend: Only app port from ALB, SSH from Bastion
+- RDS: Only MySQL from Backend
+
+**Network Segmentation:**
+
+- Public subnet: ALB, Bastion only
+- Private subnet: Backend (no internet inbound)
+- Database subnet: RDS (no internet access)
+- Security Groups enforce segmentation
+
+**Auditability:**
+
+- All rules have descriptive names
+- Tags identify environment and management
+- VPC Flow Logs can be enabled for monitoring
+
+**Industry Standards:**
+
+- Bastion host pattern (standard for SSH access)
+- ALB as single entry point (standard web architecture)
+- Database isolation (standard data protection)
+
+---
+
+### Cost Optimization
+
+**Security Groups:**
+
+- No cost (AWS doesn't charge for Security Groups)
+- No performance impact
+- Can create up to 2,500 SGs per VPC (far exceeds our needs)
+
+**Rules per Security Group:**
+
+- Maximum 60 inbound + 60 outbound rules
+- Our SGs use 1-2 inbound rules each (well below limit)
+
+---
