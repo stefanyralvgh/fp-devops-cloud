@@ -3,7 +3,7 @@
 **Project:** Cloud Migration with Terraform & Ansible  
 **Cloud Provider:** AWS  
 **Environments:** QA, Production  
-**Last Updated:** January 9, 2026
+**Last Updated:** January 10, 2026
 
 ---
 
@@ -839,5 +839,434 @@ terraform workspace select prod → Creates prod-bastion-sg, prod-alb-sg, etc.
 
 - Maximum 60 inbound + 60 outbound rules
 - Our SGs use 1-2 inbound rules each (well below limit)
+
+---
+
+## Compute Architecture - Bastion Host
+
+### Decision: Bastion Host for SSH Access
+
+**Context:**  
+Backend and database instances will be deployed in private subnets without public IP addresses. Direct SSH access from the internet is impossible and would be a security anti-pattern even if possible.
+
+**Decision:**  
+Implement a Bastion Host (jump server) in a public subnet as the single, hardened entry point for SSH access to private infrastructure.
+
+**Implementation:**
+
+```hcl
+Resource: aws_instance.bastion
+AMI: Amazon Linux 2 (latest via data source)
+Instance Type: t2.micro (free tier)
+Subnet: First public subnet (us-east-1a)
+Security Group: bastion-sg (SSH from admin IP only)
+Elastic IP: Yes (persistent public address)
+```
+
+**Justification:**
+
+**Security benefits:**
+
+- **Reduced attack surface:** One SSH endpoint vs multiple exposed instances
+- **Centralized access control:** Single point to implement security policies
+- **Audit trail:** All SSH access funnels through one location
+- **Easier hardening:** Only one host requires extensive security configuration
+
+**Operational benefits:**
+
+- **Simplified access:** Single IP to whitelist in corporate firewalls
+- **Cost-effective:** Minimal additional cost (one t2.micro instance)
+- **Standard pattern:** Industry-recognized best practice
+
+**Alternative approaches considered:**
+
+| Approach                            | Cost            | Complexity | Security  | Selected |
+| ----------------------------------- | --------------- | ---------- | --------- | -------- |
+| **Bastion Host**                    | ~$0 (free tier) | Low        | High      | ✅ Yes   |
+| AWS Systems Manager Session Manager | $0              | Medium     | Very High | ❌ No    |
+| VPN (Site-to-Site)                  | ~$36/month      | High       | High      | ❌ No    |
+| VPN (Client VPN)                    | ~$72/month      | Medium     | High      | ❌ No    |
+| Public IPs on all instances         | $0              | Low        | Very Low  | ❌ No    |
+
+**Why not Systems Manager Session Manager:**
+
+- Requires IAM setup and additional configuration
+- Less familiar to evaluators (Bastion is standard)
+- Harder to demonstrate in presentation
+- Overkill for learning project
+- Valid for production, but Bastion simpler for education
+
+**Why not VPN:**
+
+- Significant cost (~$36-72/month)
+- Complex setup (customer gateway, VPN gateway)
+- Overkill for project scope
+- Bastion achieves same access goal at lower cost
+
+**Trade-offs accepted:**
+
+- Single point of failure (mitigated by quick recreation time)
+- No high availability (acceptable for QA environment)
+- Manual SSH vs automated Session Manager (acceptable for learning)
+
+---
+
+### Decision: Elastic IP for Bastion
+
+**Context:**  
+EC2 instances receive random public IPs that change on stop/start cycles. For a Bastion Host that serves as a consistent access point, IP address changes would break firewall rules, SSH configurations, and documentation.
+
+**Decision:**  
+Assign an Elastic IP to the Bastion Host for persistent public addressing.
+
+**Implementation:**
+
+```hcl
+resource "aws_eip" "bastion" {
+  instance = aws_instance.bastion.id
+  domain   = "vpc"
+}
+```
+
+**Justification:**
+
+**Benefits:**
+
+- **Persistence:** IP survives instance stop/start/restart
+- **Consistency:** Same IP for entire project lifecycle
+- **Whitelisting:** Can configure firewall rules once
+- **Documentation:** SSH commands don't need updating
+- **Disaster recovery:** Can reassign to new instance if needed
+
+**Cost analysis:**
+
+- Free while attached to running instance
+- $0.005/hour (~$3.60/month) if unattached
+- **Mitigation:** Always attach before stopping billing (or destroy instance)
+
+**Alternative considered:**
+
+- Use instance public IP → Free but changes frequently
+- **Rejected because:** Operational overhead of tracking IP changes outweighs minimal risk of EIP cost
+
+---
+
+### Decision: Amazon Linux 2 as Base Operating System
+
+**Context:**  
+Multiple Linux distributions are available for EC2 instances (Amazon Linux, Ubuntu, RHEL, CentOS). The choice affects package availability, support, and operational costs.
+
+**Decision:**  
+Use Amazon Linux 2 for all EC2 instances (Bastion, Backend, Frontend).
+
+**Implementation:**
+
+```hcl
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+```
+
+**Justification:**
+
+**Amazon Linux 2 advantages:**
+
+- **AWS-optimized:** Tuned for EC2 performance
+- **Free:** No licensing costs (vs RHEL)
+- **AWS integration:** Pre-installed AWS CLI, CloudWatch agent
+- **Long-term support:** Updates until June 2025 (Amazon Linux 2023 available after)
+- **amazon-linux-extras:** Simplified package management (Ansible, Docker, etc.)
+- **Security:** Regular security patches from AWS
+- **Documentation:** Extensive AWS documentation and tutorials
+
+**Comparison with alternatives:**
+
+| Distribution       | Cost      | AWS Integration | Package Availability | Learning Curve |
+| ------------------ | --------- | --------------- | -------------------- | -------------- | ----------- |
+| **Amazon Linux 2** | Free      | Excellent       | Good                 | Low            | ✅ Selected |
+| Ubuntu 20.04/22.04 | Free      | Good            | Excellent            | Low            |
+| RHEL 8             | ~$0.09/hr | Good            | Excellent            | Medium         |
+| CentOS Stream      | Free      | Good            | Good                 | Medium         |
+
+**Why not Ubuntu:**
+
+- Amazon Linux 2 is the AWS "native" choice
+- Better for demonstrating AWS expertise
+- `amazon-linux-extras` simplifies Ansible installation
+- Valid alternative, but AL2 more aligned with project goals
+
+---
+
+### Decision: AMI Discovery via Data Source
+
+**Context:**  
+Amazon Machine Image (AMI) IDs are region-specific and AWS updates them monthly with security patches. Hardcoding an AMI ID would create maintenance burden and region portability issues.
+
+**Decision:**  
+Use Terraform data source to dynamically discover the latest Amazon Linux 2 AMI at apply time.
+
+**Implementation:**
+
+```hcl
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+resource "aws_instance" "bastion" {
+  ami = data.aws_ami.amazon_linux_2.id
+  # ...
+}
+```
+
+**Justification:**
+
+**Benefits:**
+
+- **Always latest:** Automatically uses newest AMI with security patches
+- **Region-agnostic:** Same code works in any AWS region
+- **No manual updates:** Don't need to track AMI releases
+- **Security:** Reduces window of exposure to known vulnerabilities
+
+**How it works:**
+
+1. Terraform queries AWS API for AMIs
+2. Filters by: owner (amazon), name pattern, virtualization type
+3. Sorts by creation date
+4. Returns most recent AMI ID
+5. Uses that ID for instance creation
+
+**Alternative (hardcoded AMI):**
+
+```hcl
+# ❌ Bad practice
+ami = "ami-0c55b159cbfafe1f0"  # Fixed AMI, will become outdated
+```
+
+**Problems with hardcoding:**
+
+- AMI might not exist in other regions
+- AMI might be deprecated
+- Missing security patches
+- Code becomes region-specific
+
+---
+
+### Decision: User Data for Initial Configuration
+
+**Context:**  
+EC2 instances require baseline configuration (updates, timezone, tools) before they're ready for use. This can be done manually via SSH or automated via User Data scripts.
+
+**Decision:**  
+Use User Data scripts for repeatable, automated initial configuration.
+
+**Implementation:**
+
+```hcl
+user_data = <<-EOF
+  #!/bin/bash
+  yum update -y
+  yum install -y git wget curl vim
+  timedatectl set-timezone America/Bogota
+  echo "Movie Analyst Bastion Host" > /etc/motd
+EOF
+```
+
+**Justification:**
+
+**Benefits:**
+
+- **Automation:** No manual SSH configuration needed
+- **Repeatability:** Recreating instance yields identical result
+- **Infrastructure as Code:** Configuration defined in Terraform
+- **Faster deployment:** Configuration happens during boot
+
+**Limitations understood:**
+
+- Executes only on first boot (not on restart)
+- Limited to 16KB
+- Errors don't prevent instance creation
+- No built-in logging (must check `/var/log/cloud-init-output.log`)
+
+**When to use User Data vs Configuration Management:**
+
+| Approach                | Use Case                                                          |
+| ----------------------- | ----------------------------------------------------------------- |
+| **User Data**           | Simple package installation, system settings, one-time setup      |
+| **Ansible/Chef/Puppet** | Complex configuration, application deployment, ongoing management |
+
+**For this project:**
+
+- User Data: Basic system setup (Bastion)
+- Ansible: Application deployment (Frontend, Backend)
+- Clean separation of concerns
+
+---
+
+### Decision: SSH Key Management Strategy
+
+**Context:**  
+EC2 instances require SSH key pairs for authentication. Keys can be generated by AWS or provided by users. Key management affects security and operational flexibility.
+
+**Decision:**  
+Generate SSH keys locally, store public key in Terraform, upload to AWS via `aws_key_pair` resource.
+
+**Implementation:**
+
+```bash
+# Local key generation
+ssh-keygen -t rsa -b 4096 -f movie-analyst-bastion-key
+```
+
+```hcl
+# Terraform key pair resource
+resource "aws_key_pair" "bastion" {
+  key_name   = "${terraform.workspace}-bastion-key"
+  public_key = file("${path.module}/keys/movie-analyst-bastion-key.pub")
+}
+```
+
+**Security measures:**
+
+```gitignore
+# .gitignore
+keys/
+*.pem
+```
+
+**Justification:**
+
+**Benefits of local generation:**
+
+- **Control:** You manage the private key lifecycle
+- **Backup:** Can regenerate public key from private key
+- **Rotation:** Easy to create new keys and update Terraform
+- **Portability:** Same key can be used across projects
+
+**Benefits of AWS generation:**
+
+- **Convenience:** AWS generates and provides .pem download
+- **No local storage:** Key created directly in AWS
+
+**Why local generation chosen:**
+
+- More control and flexibility
+- Standard DevOps practice
+- Easier key rotation
+- Can use same key across multiple environments if desired
+
+**Alternative approaches:**
+
+| Method               | Control | Backup    | Rotation | Selected    |
+| -------------------- | ------- | --------- | -------- | ----------- |
+| **Local generation** | High    | Easy      | Easy     | ✅ Yes      |
+| AWS-generated        | Low     | Hard      | Hard     | ❌ No       |
+| AWS Secrets Manager  | Medium  | Automatic | Medium   | ❌ Overkill |
+
+---
+
+### Decision: Instance Storage and Monitoring
+
+**Context:**  
+EC2 instances require root volume configuration. Options include volume type, size, encryption, and deletion policy. Monitoring can be basic (5-minute intervals) or detailed (1-minute intervals).
+
+**Decision:**  
+Use encrypted GP3 volumes with delete-on-termination enabled. Enable detailed monitoring.
+
+**Implementation:**
+
+```hcl
+root_block_device {
+  volume_type           = "gp3"
+  volume_size           = 8
+  delete_on_termination = true
+  encrypted             = true
+}
+
+monitoring = true
+```
+
+**Justification:**
+
+**Volume type (GP3):**
+
+- Latest generation general-purpose SSD
+- Better price/performance than GP2
+- 3000 IOPS baseline (vs 100-16000 for GP2)
+- Free tier eligible (30GB/month total across all volumes)
+
+**Volume size (8GB):**
+
+- Amazon Linux 2 requires ~2GB
+- Leaves headroom for logs, packages, temporary files
+- Within free tier limit
+- Cost: $0.08/GB-month × 8GB = $0.64/month (if over free tier)
+
+**Encryption (enabled):**
+
+- Security best practice
+- No performance penalty
+- No additional cost
+- Protects data at rest
+- Required by many compliance frameworks
+
+**Delete on termination (true):**
+
+- Prevents orphaned volumes
+- Reduces costs (no forgotten volumes accruing charges)
+- Appropriate for ephemeral infrastructure
+- **Trade-off:** Cannot preserve data if instance terminated (acceptable for Bastion)
+
+**Detailed monitoring (enabled):**
+
+- 1-minute metric intervals (vs 5-minute basic)
+- Better troubleshooting capabilities
+- Cost: $2.10/month per instance
+- **For free tier:** First 10 metrics free, additional $0.30 per metric
+- Worth it for learning (can see real-time performance)
+
+---
+
+### Cost Optimization Decisions
+
+**Bastion Host monthly cost breakdown:**
+
+| Resource              | Cost                   | Free Tier                 | Actual Cost  |
+| --------------------- | ---------------------- | ------------------------- | ------------ |
+| EC2 t2.micro          | $0.0116/hr (~$8.50/mo) | 750 hrs/mo                | $0           |
+| EBS GP3 8GB           | $0.08/GB-mo            | 30GB/mo                   | $0           |
+| Elastic IP (attached) | $0/hr                  | Always free when attached | $0           |
+| Data Transfer Out     | $0.09/GB               | 100GB/mo                  | $0           |
+| Detailed Monitoring   | $2.10/mo               | 10 metrics free           | $0           |
+| **Total**             |                        |                           | **$0/month** |
+
+**Cost mitigation strategies:**
+
+1. Use t2.micro (free tier eligible)
+2. Keep instance running (EIP free when attached)
+3. Delete instance when not in use (save EC2 charges)
+4. Use stop vs terminate (preserve EBS, still incur small charge)
+
+**Production considerations:**
+
+- High Availability: Auto Scaling Group (ASG) with min=1, max=1
+- Multi-AZ: Bastion in each AZ (~$16/month)
+- Reserved Instance: ~40% savings if running 24/7
 
 ---

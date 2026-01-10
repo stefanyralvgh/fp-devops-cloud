@@ -1041,3 +1041,648 @@ docs/DAILY_LOG.md          # This document
 - Least privilege: Only allow minimum necessary access
 
 ---
+## Day 6 - January 10, 2026
+
+**Status:** ✅ Complete | **Branch:** develop
+
+### What I Did
+
+#### 1. SSH Key Pair Generation
+
+**Created RSA key pair for Bastion access:**
+```bash
+ssh-keygen -t rsa -b 4096 -f movie-analyst-bastion-key -C "bastion@movie-analyst"
+```
+
+**Files generated:**
+- `movie-analyst-bastion-key` (private key - stored locally, not in git)
+- `movie-analyst-bastion-key.pub` (public key - uploaded to AWS)
+
+**Security measures:**
+- Added `keys/` directory to `.gitignore`
+- Set restrictive permissions on private key (400)
+- Only public key stored in Terraform code
+
+---
+
+#### 2. Compute Module Structure
+
+Created compute module for EC2 instance management:
+```bash
+terraform/modules/compute/
+├── main.tf       # Bastion instance, EIP, AMI data source
+├── variables.tf  # Module inputs
+└── outputs.tf    # Bastion IPs and connection info
+```
+
+---
+
+#### 3. Bastion Host Configuration
+
+**Instance specifications:**
+- **AMI:** Amazon Linux 2 (latest, auto-discovered via data source)
+- **Instance type:** t2.micro (free tier eligible)
+- **Subnet:** First public subnet (us-east-1a)
+- **Security Group:** bastion-sg (SSH from my IP only)
+- **Storage:** 8GB GP3 encrypted root volume
+- **Monitoring:** Enabled (CloudWatch basic monitoring)
+
+**Key features implemented:**
+
+**User Data script:**
+```bash
+#!/bin/bash
+yum update -y
+yum install -y git wget curl vim
+timedatectl set-timezone America/Bogota
+# Custom MOTD banner
+```
+
+**Elastic IP assignment:**
+- Persistent public IP: `54.144.192.77`
+- Survives instance stop/start cycles
+- Enables consistent firewall whitelisting
+
+---
+
+#### 4. AWS Key Pair Resource
+
+Created Terraform resource to manage SSH key in AWS:
+```hcl
+resource "aws_key_pair" "bastion" {
+  key_name   = "${terraform.workspace}-bastion-key"
+  public_key = file("${path.module}/keys/movie-analyst-bastion-key.pub")
+}
+```
+
+**Why separate resource:**
+- Reusable across multiple instances
+- Centralized key management
+- Easy rotation (update file, apply)
+
+---
+
+#### 5. Module Integration
+
+**Updated root main.tf:**
+- Called compute module with required parameters
+- Passed networking outputs (VPC ID, subnet IDs)
+- Passed security outputs (bastion SG ID)
+- Referenced key pair resource
+
+**Added helpful outputs:**
+```hcl
+output "bastion_ssh_command" {
+  value = "ssh -i keys/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}"
+}
+```
+
+---
+
+#### 6. Deployment
+```bash
+terraform init       # Installed compute module
+terraform validate   # Validated configuration
+terraform plan       # Reviewed 3 new resources
+terraform apply      # Created key pair, instance, EIP
+```
+
+**Resources created:**
+1. `aws_key_pair.bastion` (qa-bastion-key)
+2. `aws_instance.bastion` (qa-bastion-host)
+3. `aws_eip.bastion` (54.144.192.77)
+
+---
+
+#### 7. SSH Connection from Windows
+
+**Challenge encountered:** Windows file permissions too permissive for SSH
+
+**Error:**
+```
+WARNING: UNPROTECTED PRIVATE KEY FILE!
+Permissions for 'C:\Users\Stefany\.ssh\movie-analyst-bastion-key' are too open.
+bad permissions
+```
+
+**Solution:** Used Git Bash instead of PowerShell
+```bash
+# Git Bash handles Linux-style permissions correctly
+chmod 400 ~/.ssh/movie-analyst-bastion-key
+ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
+```
+
+**Connection successful:**
+```
+   =====================================
+   Movie Analyst Bastion Host
+   Environment: qa
+   =====================================
+[ec2-user@ip-10-0-1-25 ~]$
+```
+
+**Hostname explanation:**
+- `ec2-user`: Default user for Amazon Linux 2
+- `ip-10-0-1-25`: Hostname based on private IP (10.0.1.25)
+- Standard AWS behavior, no custom hostname needed
+
+---
+
+#### 8. Ansible Installation on Bastion
+
+**Installed Ansible using Amazon Linux Extras repository:**
+```bash
+sudo amazon-linux-extras install ansible2 -y
+```
+
+**Verification:**
+```bash
+ansible --version
+# ansible 2.9.23
+# config file = /etc/ansible/ansible.cfg
+# python version = 2.7.18
+```
+
+**Additional tools installed:**
+```bash
+# Python 3 and pip
+sudo yum install python3-pip -y
+
+# Boto3 (AWS SDK for Python - needed for Ansible AWS modules)
+pip3 install boto3 --user
+
+# AWS CLI configuration (for Ansible dynamic inventory)
+aws configure
+# Configured with same credentials as local machine
+```
+
+---
+
+### Key Learnings (Bastion & SSH Concepts)
+
+#### 1. Bastion Host Pattern
+
+**What I learned:**
+
+**Purpose:** Single, hardened entry point for SSH access to private infrastructure
+
+**Why needed:**
+- Backend instances are in private subnets (no public IPs)
+- Direct SSH from internet would be security risk
+- Bastion acts as "jump server" or "jump box"
+
+**Security benefits:**
+- Reduces attack surface (one SSH endpoint vs many)
+- Centralized access logging
+- Easier to audit (who accessed what, when)
+- Can implement additional controls (MFA, session recording)
+
+**Mental model (building analogy):**
+- **Without Bastion:** Every office has external door (security nightmare)
+- **With Bastion:** One secure maintenance entrance, guard verifies ID, escorts to office
+
+---
+
+#### 2. Elastic IP vs Regular Public IP
+
+**Confusion:** Why do we need Elastic IP when instance already gets public IP?
+
+**What I learned:**
+
+| Regular Public IP | Elastic IP |
+|-------------------|------------|
+| Random, AWS-assigned | Fixed, you choose |
+| Changes on stop/start | Persists across stop/start |
+| Free | Free while attached |
+| Released on termination | Persists until you delete |
+
+**Real-world scenario:**
+```
+Day 1: Create Bastion → Gets IP 54.144.192.77
+Day 2: Stop instance to save money
+Day 3: Start instance → Gets NEW IP 52.201.45.123
+Problem: Firewall rules, SSH configs, scripts all broken
+
+With Elastic IP:
+Day 1: Create Bastion + EIP → 54.144.192.77
+Day 2: Stop instance
+Day 3: Start instance → SAME IP 54.144.192.77
+Solution: Everything still works
+```
+
+**Cost consideration:**
+- Elastic IP is FREE while attached to running instance
+- Costs $0.005/hour (~$3.60/month) if NOT attached
+- **Takeaway:** Always delete unused Elastic IPs
+
+---
+
+#### 3. AMI Data Source
+
+**Confusion:** Why not hardcode AMI ID like `ami-0c55b159cbfafe1f0`?
+
+**What I learned:**
+
+**Problem with hardcoded AMI IDs:**
+- AMI IDs differ by region (us-east-1 vs us-west-2)
+- AWS updates AMIs monthly (security patches)
+- Hardcoded ID might not exist in 6 months
+
+**Data source solution:**
+```hcl
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
+  
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+```
+
+**What this does:**
+- Queries AWS API for latest Amazon Linux 2 AMI
+- Always uses most recent version (security patches included)
+- Works in any region automatically
+- Pattern: `amzn2-ami-hvm-*` = "Amazon Linux 2, HVM virtualization, any version, x86_64, GP2 storage"
+
+**Mental model:** Like using `apt-get install nginx` (latest version) vs downloading `nginx-1.18.0.deb` (hardcoded version)
+
+---
+
+#### 4. User Data Script
+
+**What I learned:**
+
+**Execution:**
+- Runs ONCE on first boot only
+- Runs as root (no need for sudo)
+- Executes before instance is fully operational
+
+**Common uses:**
+- Install packages
+- Configure services
+- Set hostname, timezone
+- Pull application code
+- Join domain/cluster
+
+**Important limitations:**
+- Runs only on FIRST boot (not on restart)
+- Limited to 16KB size
+- No easy way to see execution logs (must SSH and check `/var/log/cloud-init-output.log`)
+- Errors don't fail instance creation (instance starts even if script fails)
+
+**For this project:**
+```bash
+# Update system (security patches)
+yum update -y
+
+# Install dev tools
+yum install -y git wget curl vim
+
+# Set timezone
+timedatectl set-timezone America/Bogota
+
+# Custom login banner (MOTD = Message of the Day)
+echo "Movie Analyst Bastion Host" > /etc/motd
+```
+
+**Alternative (for complex setup):** Use Configuration Management (Ansible, Chef, Puppet) after instance creation
+
+---
+
+#### 5. SSH Key Management
+
+**Confusion:** How do SSH keys actually work?
+
+**What I learned:**
+
+**Key pair generation:**
+```
+ssh-keygen creates:
+1. Private key (movie-analyst-bastion-key)
+   - Keep secret
+   - Never share
+   - Never commit to git
+   
+2. Public key (movie-analyst-bastion-key.pub)
+   - Can share freely
+   - Upload to AWS
+   - Copy to servers
+```
+
+**Authentication flow:**
+```
+1. AWS stores public key on Bastion
+2. You connect with private key
+3. Bastion says: "Prove you have the private key"
+4. Your SSH client signs a challenge with private key
+5. Bastion verifies signature with public key
+6. If valid → Access granted
+```
+
+**Mental model:** 
+- Public key = padlock (you can give to anyone)
+- Private key = unique key that opens that padlock
+- Server has padlock, only you have key
+
+**Security best practices:**
+- Private key permissions: 400 (read-only for owner)
+- Never email private keys
+- Use different keys for different environments
+- Rotate keys periodically (every 90 days in production)
+
+---
+
+#### 6. Windows SSH Permissions Issue
+
+**Problem encountered:**
+
+Windows NTFS permissions don't map cleanly to Unix permissions (400, 600, etc.)
+
+**SSH requirement:**
+- Private key must be readable ONLY by owner
+- No other users, no groups, no "Everyone"
+
+**Why PowerShell struggled:**
+- Windows has complex permission inheritance
+- Multiple security principals (User, SYSTEM, Administrators)
+- `icacls` commands didn't fully clean permissions
+
+**Solution that worked:**
+- Git Bash includes MinGW (minimal Unix environment)
+- `chmod 400` works correctly in Git Bash
+- Translates to appropriate Windows ACLs automatically
+
+**Alternative solutions:**
+1. **WSL (Windows Subsystem for Linux):** Full Linux environment
+2. **PuTTY:** GUI client with its own key format (.ppk)
+3. **ssh-keygen from PowerShell:** Creates key with correct permissions from start
+
+**Lesson learned:** For DevOps work on Windows, Git Bash or WSL is essential
+
+---
+
+#### 7. EC2 Instance Naming
+
+**Confusion:** Hostname is `ip-10-0-1-25` instead of "bastion-qa"
+
+**What I learned:**
+
+**AWS hostname behavior:**
+- Default hostname = `ip-{private-ip-with-dashes}`
+- Example: Private IP 10.0.1.25 → Hostname `ip-10-0-1-25`
+- This is standard AWS behavior
+
+**Tag vs Hostname:**
+- **Name tag:** `qa-bastion-host` (shows in AWS Console)
+- **OS hostname:** `ip-10-0-1-25` (shows in terminal)
+- These are different things
+
+**Do I need custom hostname?**
+- **No, for this project:** Default is fine
+- **Yes, for production:** Helps identify servers in logs
+
+**How to customize (if wanted):**
+```bash
+sudo hostnamectl set-hostname bastion-qa.movie-analyst.local
+```
+
+**But:** Not necessary for learning project
+
+---
+
+### Challenges and Solutions
+
+#### Challenge 1: SSH Private Key Permissions on Windows
+
+**Problem:** 
+```
+WARNING: UNPROTECTED PRIVATE KEY FILE!
+Permissions too open
+```
+
+**Root cause:**
+- Windows NTFS permissions don't map to Unix 400/600
+- PowerShell `icacls` left extra principals with access
+- SSH client (OpenSSH) enforces strict permission checks
+
+**Attempted solutions:**
+1. PowerShell `icacls` commands → Failed (permissions still too open)
+2. Manual permission removal → Failed (inheritance issues)
+
+**Working solution:**
+- Used Git Bash (includes MinGW Unix environment)
+- `chmod 400` works correctly in Git Bash
+- Properly restricts file to owner-only read access
+
+**Lesson learned:** Git Bash essential for SSH operations on Windows
+
+---
+
+#### Challenge 2: Understanding Bastion Purpose
+
+**Initial confusion:** Why not just put backend instances in public subnets?
+
+**What I learned:**
+
+**Security implications:**
+
+| Public Subnet | Private Subnet + Bastion |
+|---------------|--------------------------|
+| Every instance exposed | Only Bastion exposed |
+| Attack surface = N instances | Attack surface = 1 instance |
+| Each instance needs hardening | Harden one Bastion |
+| Hard to audit access | Centralized access point |
+
+**Real-world analogy:**
+- **Public subnets for all:** Every employee has office with street entrance (chaos)
+- **Private + Bastion:** One secured entrance, guard escorts visitors (organized)
+
+**When Bastion NOT needed:**
+- VPN connection to VPC
+- AWS Systems Manager Session Manager (AWS-managed SSH)
+- Small, low-security environments
+
+**For this project:** Bastion is industry best practice
+
+---
+
+#### Challenge 3: First Time Using Data Sources
+
+**Confusion:** What's the difference between `resource` and `data`?
+
+**What I learned:**
+```hcl
+# RESOURCE: Terraform CREATES this
+resource "aws_instance" "bastion" {
+  ami = data.aws_ami.amazon_linux_2.id
+  # Terraform creates the instance
+}
+
+# DATA SOURCE: Terraform QUERIES this (already exists)
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  # Terraform just looks up the AMI ID
+}
+```
+
+**Use cases for data sources:**
+- Lookup existing VPCs
+- Find latest AMI
+- Get current AWS region
+- Reference resources created outside Terraform
+
+**Mental model:**
+- Resource = Write operation (CREATE)
+- Data source = Read operation (QUERY)
+
+---
+
+### Commands Used
+```bash
+# SSH key generation
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/movie-analyst-bastion-key -C "bastion@movie-analyst"
+
+# Key permissions (Git Bash)
+chmod 400 ~/.ssh/movie-analyst-bastion-key
+
+# Terraform workflow
+terraform init
+terraform fmt -recursive
+terraform validate
+terraform plan       # Should show 3 new resources
+terraform apply
+
+# SSH connection
+ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
+
+# Ansible installation (on Bastion)
+sudo amazon-linux-extras install ansible2 -y
+ansible --version
+
+# Additional tools (on Bastion)
+sudo yum install python3-pip -y
+pip3 install boto3 --user
+aws configure
+```
+
+---
+
+### Files Created/Modified
+
+**Created:**
+```
+~/.ssh/movie-analyst-bastion-key      # Private key (local only)
+~/.ssh/movie-analyst-bastion-key.pub  # Public key
+terraform/keys/movie-analyst-bastion-key.pub  # Copy for Terraform
+terraform/modules/compute/main.tf
+terraform/modules/compute/variables.tf
+terraform/modules/compute/outputs.tf
+terraform/key_pair.tf                 # Key pair resource
+```
+
+**Modified:**
+```
+terraform/.gitignore              # Added keys/, *.pem
+terraform/main.tf                 # Added compute module call
+terraform/outputs.tf              # Added bastion outputs
+```
+
+---
+
+### Infrastructure Created
+
+**AWS Resources (3 new):**
+
+1. **SSH Key Pair:** `qa-bastion-key`
+   - Public key stored in AWS
+   - Used for EC2 instance authentication
+
+2. **EC2 Instance:** `qa-bastion-host`
+   - AMI: Amazon Linux 2 (ami-xxxxxxxxx, auto-discovered)
+   - Type: t2.micro
+   - Subnet: qa-public-subnet-1 (10.0.1.0/24, us-east-1a)
+   - Private IP: 10.0.1.25
+   - Security Group: qa-bastion-sg
+   - Root volume: 8GB GP3, encrypted
+   - Monitoring: Enabled
+
+3. **Elastic IP:** `qa-bastion-eip`
+   - Public IP: 54.144.192.77
+   - Associated with: qa-bastion-host
+   - Persists across instance stop/start
+
+**Software installed on Bastion:**
+- Ansible 2.9.23
+- Python 3 + pip
+- Boto3 (AWS SDK)
+- AWS CLI (configured)
+- Git, wget, curl, vim
+
+**Cost impact:**
+- EC2 t2.micro: Free tier (750 hours/month)
+- Elastic IP (attached): Free
+- EBS 8GB: Free tier (30GB/month limit)
+- Data transfer: Free tier (15GB/month)
+- **Current additional cost: $0/month** (within free tier)
+
+---
+
+### Key Decisions Made
+
+1. **Amazon Linux 2 over Ubuntu:** AWS-optimized, includes amazon-linux-extras, free licensing
+2. **Elastic IP:** Persistent address for whitelisting and consistency
+3. **t2.micro:** Free tier eligible, sufficient for jump host
+4. **Single Bastion:** One per environment (not HA) - cost optimization
+5. **Data source for AMI:** Always use latest, region-agnostic
+6. **User data for basic setup:** Automated initial configuration
+7. **Git Bash for SSH:** Windows permission handling issues
+
+---
+
+### Next Steps (Day 7)
+
+**Backend EC2 Instances:**
+- [ ] Create backend instances in private subnets
+- [ ] Configure in both AZs (us-east-1a, us-east-1b)
+- [ ] Verify internet access via NAT Gateway
+- [ ] Test SSH access via Bastion (jump host)
+- [ ] User data for Node.js app preparation
+
+**Estimated time:** 2-3 hours
+
+---
+
+### Study Notes for Presentation
+
+**Bastion concepts to remember:**
+- Jump host pattern for private subnet access
+- Elastic IP for persistent addressing
+- Data sources vs resources in Terraform
+- User data execution (first boot only)
+- SSH key pair management and security
+
+**Questions evaluator might ask:**
+
+1. **"Why Bastion instead of VPN?"**
+   → Simpler for small projects, no additional AWS costs, standard pattern, easier to demonstrate
+
+2. **"What if Bastion goes down?"**
+   → For QA: Acceptable risk, can recreate quickly. For Prod: Would implement HA (Auto Scaling Group with capacity 1, multi-AZ)
+
+3. **"Why Elastic IP?"**
+   → Persistent address survives stop/start, easier for firewall rules, no need to update configurations
+
+4. **"How do you access backend from Bastion?"**
+   → SSH tunneling/jump: `ssh -J bastion backend` or two-hop SSH
+
+5. **"Why not hardcode AMI ID?"**
+   → AMI IDs differ by region, AWS updates monthly, data source always gets latest
+
+**Architecture understanding:**
+- Bastion = only public SSH endpoint
+- Private instances = SSH only from Bastion
+- Defense in depth: SG + Network isolation
+- Least privilege: Bastion can't access database directly
