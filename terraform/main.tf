@@ -37,3 +37,20 @@ module "security" {
   my_ip       = "190.158.28.120/32"
   vpc_cidr    = var.vpc_cidr
 }
+
+
+# COMPUTE MODULE
+
+module "compute" {
+  source = "./modules/compute"
+
+  project_name      = var.project_name
+  environment       = terraform.workspace
+  vpc_id            = module.networking.vpc_id
+  public_subnet_ids = module.networking.public_subnet_ids
+  bastion_sg_id     = module.security.bastion_sg_id
+  key_name          = aws_key_pair.bastion.key_name
+
+  # Instance configuration
+  bastion_instance_type = "t3.micro"
+}

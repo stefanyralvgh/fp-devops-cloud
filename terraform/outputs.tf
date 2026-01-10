@@ -63,3 +63,16 @@ output "rds_sg_id" {
   description = "RDS Security Group ID"
   value       = module.security.rds_sg_id
 }
+
+
+# COMPUTE OUTPUTS
+
+output "bastion_public_ip" {
+  description = "Public IP of Bastion Host"
+  value       = module.compute.bastion_public_ip
+}
+
+output "bastion_ssh_command" {
+  description = "SSH command to connect to Bastion"
+  value       = "ssh -i keys/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}"
+}
