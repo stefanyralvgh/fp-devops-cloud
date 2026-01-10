@@ -28,3 +28,8 @@ Thumbs.db
 # Secrets
 *secret*
 *credentials*
+
+# Keys
+*.pem
+*.pub   
+keys/
