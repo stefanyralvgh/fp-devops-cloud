@@ -1,3 +1,4 @@
+# BASTION OUTPUTS
 output "bastion_id" {
   description = "ID of the Bastion instance"
   value       = aws_instance.bastion.id
@@ -16,4 +17,22 @@ output "bastion_private_ip" {
 output "bastion_public_dns" {
   description = "Public DNS of the Bastion"
   value       = aws_eip.bastion.public_dns
+}
+
+
+# BACKEND OUTPUTS
+
+output "backend_instance_ids" {
+  description = "IDs of Backend instances"
+  value       = aws_instance.backend[*].id
+}
+
+output "backend_private_ips" {
+  description = "Private IPs of Backend instances"
+  value       = aws_instance.backend[*].private_ip
+}
+
+output "backend_availability_zones" {
+  description = "Availability zones of Backend instances"
+  value       = aws_instance.backend[*].availability_zone
 }
