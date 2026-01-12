@@ -24,6 +24,7 @@ resource "aws_instance" "bastion" {
   key_name               = var.key_name
   subnet_id              = var.public_subnet_ids[0] # First public subnet
   vpc_security_group_ids = [var.bastion_sg_id]
+  iam_instance_profile   = aws_iam_instance_profile.bastion.name
 
   # Enable detailed monitoring (free tier)
   monitoring = true
@@ -95,7 +96,8 @@ resource "aws_instance" "backend" {
   key_name               = var.key_name
   subnet_id              = var.private_subnet_ids[count.index % length(var.private_subnet_ids)]
   vpc_security_group_ids = [var.backend_sg_id]
-  iam_instance_profile   = var.backend_instance_profile
+  iam_instance_profile   = aws_iam_instance_profile.backend.name
+
 
   # Enable detailed monitoring
   monitoring = true

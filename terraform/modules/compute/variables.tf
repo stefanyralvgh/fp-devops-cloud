@@ -36,6 +36,8 @@ variable "bastion_instance_type" {
 }
 
 
+
+
 # BACKEND VARIABLES
 
 variable "private_subnet_ids" {
@@ -60,8 +62,12 @@ variable "backend_instance_count" {
   default     = 2
 }
 
-variable "backend_instance_profile" {
-  description = "IAM instance profile for Backend instances"
-  type        = string
-  default     = ""
+variable "tags" {
+  description = "Common tags for compute resources"
+  type        = map(string)
 }
+
+variable "aws_region" {
+  type = string
+}
+

@@ -44,6 +44,7 @@ module "security" {
 module "compute" {
   source = "./modules/compute"
 
+
   project_name = var.project_name
   environment  = terraform.workspace
   vpc_id       = module.networking.vpc_id
@@ -55,9 +56,14 @@ module "compute" {
   bastion_instance_type = "t3.micro"
 
   # Backend configuration
-  private_subnet_ids       = module.networking.private_subnet_ids
-  backend_sg_id            = module.security.backend_sg_id
-  backend_instance_type    = "t3.micro"
-  backend_instance_count   = 2
-  backend_instance_profile = aws_iam_instance_profile.backend.name
+  private_subnet_ids     = module.networking.private_subnet_ids
+  backend_sg_id          = module.security.backend_sg_id
+  backend_instance_type  = "t3.micro"
+  backend_instance_count = 2
+
+  # Tags
+
+  tags       = var.common_tags
+  aws_region = var.aws_region
+
 }
