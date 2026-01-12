@@ -83,3 +83,64 @@ resource "aws_eip" "bastion" {
   # Ensure instance is created before EIP
   depends_on = [aws_instance.bastion]
 }
+
+
+# BACKEND INSTANCES
+
+resource "aws_instance" "backend" {
+  count = var.backend_instance_count
+
+  ami                    = data.aws_ami.amazon_linux_2.id
+  instance_type          = var.backend_instance_type
+  key_name               = var.key_name
+  subnet_id              = var.private_subnet_ids[count.index % length(var.private_subnet_ids)]
+  vpc_security_group_ids = [var.backend_sg_id]
+  iam_instance_profile   = var.backend_instance_profile
+
+  # Enable detailed monitoring
+  monitoring = true
+
+  # Root volume configuration
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 8
+    delete_on_termination = true
+    encrypted             = true
+
+    tags = {
+      Name = "${var.environment}-backend-${count.index + 1}-root-volume"
+    }
+  }
+
+  # User data script
+  user_data = <<-EOF
+              #!/bin/bash
+              # Update system
+              yum update -y
+              
+              # Install development tools
+              yum groupinstall -y "Development Tools"
+              yum install -y git wget curl vim
+              
+              # Set timezone
+              timedatectl set-timezone America/Bogota
+              
+              # Create application directory
+              mkdir -p /opt/movie-analyst
+              
+              # Create banner
+              echo "=====================================" > /etc/motd
+              echo "   Movie Analyst Backend Server" >> /etc/motd
+              echo "   Instance: ${count.index + 1}" >> /etc/motd
+              echo "   Environment: ${var.environment}" >> /etc/motd
+              echo "=====================================" >> /etc/motd
+              EOF
+
+  tags = {
+    Name        = "${var.environment}-backend-${count.index + 1}"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    Role        = "Backend"
+    Tier        = "Application"
+  }
+}
