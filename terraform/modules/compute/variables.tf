@@ -1,3 +1,4 @@
+# BASTION VARIABLES
 variable "project_name" {
   description = "Project name for resource naming"
   type        = string
@@ -32,4 +33,35 @@ variable "bastion_instance_type" {
   description = "Instance type for Bastion host"
   type        = string
   default     = "t3.micro"
+}
+
+
+# BACKEND VARIABLES
+
+variable "private_subnet_ids" {
+  description = "List of private subnet IDs for Backend instances"
+  type        = list(string)
+}
+
+variable "backend_sg_id" {
+  description = "Security Group ID for Backend instances"
+  type        = string
+}
+
+variable "backend_instance_type" {
+  description = "Instance type for Backend instances"
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "backend_instance_count" {
+  description = "Number of backend instances to create"
+  type        = number
+  default     = 2
+}
+
+variable "backend_instance_profile" {
+  description = "IAM instance profile for Backend instances"
+  type        = string
+  default     = ""
 }
