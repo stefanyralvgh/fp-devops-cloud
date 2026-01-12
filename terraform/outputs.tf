@@ -65,7 +65,7 @@ output "rds_sg_id" {
 }
 
 
-# COMPUTE OUTPUTS
+# COMPUTE OUTPUTS (BASTION)
 
 output "bastion_public_ip" {
   description = "Public IP of Bastion Host"
@@ -73,6 +73,27 @@ output "bastion_public_ip" {
 }
 
 output "bastion_ssh_command" {
-  description = "SSH command to connect to Bastion"
-  value       = "ssh -i keys/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}"
+  description = "SSH command to connect to bastion"
+  value       = "ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}"
+}
+
+
+# COMPUTE OUTPUTS (BACKEND)
+
+output "backend_private_ips" {
+  description = "Private IPs of Backend instances"
+  value       = module.compute.backend_private_ips
+}
+
+output "backend_ssh_commands" {
+  description = "SSH commands to connect to Backend via Bastion"
+  value = [
+    for ip in module.compute.backend_private_ips :
+    "ssh -J ec2-user@${module.compute.bastion_public_ip} ec2-user@${ip}"
+  ]
+}
+
+output "backend_availability_zones" {
+  description = "Availability zones of Backend instances"
+  value       = module.compute.backend_availability_zones
 }
