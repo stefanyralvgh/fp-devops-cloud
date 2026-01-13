@@ -2535,3 +2535,714 @@ terraform/modules/compute/outputs.tf   # Added backend outputs
 - SSH: Local → Bastion (public) → Backend (private)
 - Backend → NAT → IGW → Internet (outbound only)
 - IAM role enables AWS API access without credentials
+
+---
+
+## Day 8 - January 13, 2026
+
+**Status:** ✅ Complete | **Branch:** develop
+
+### What I Did
+
+#### 1. Configured Dynamic Monitoring Based on Workspace
+
+**Challenge:** Detailed CloudWatch monitoring costs $2.10/instance/month. Need to enable only in production.
+
+**Implementation:**
+
+Updated `terraform/main.tf` to enable monitoring conditionally:
+
+```hcl
+module "compute" {
+  source = "./modules/compute"
+
+  # Enable detailed monitoring only in prod workspace
+  enable_detailed_monitoring = terraform.workspace == "prod"
+
+  # ... other variables ...
+}
+```
+
+**Result:**
+
+- QA: Basic monitoring (5-min intervals) → $0/month
+- Prod: Detailed monitoring (1-min intervals) → $4.20/month
+- Savings: $4.20/month in QA
+
+---
+
+#### 2. Created Frontend EC2 Instances
+
+**Instance specifications:**
+
+```
+Instance Type: t3.micro (free tier eligible)
+AMI: Amazon Linux 2 (latest via data source)
+Count: 2 instances (one per AZ)
+Subnets: public-subnet-1 (us-east-1a), public-subnet-2 (us-east-1b)
+Security Group: frontend-sg (HTTP from ALB, SSH from Bastion)
+IAM Role: frontend-role (SSM + CloudWatch permissions)
+Public IPs: Enabled (instances need direct internet access)
+```
+
+**Storage configuration:**
+
+```
+Volume Type: GP3
+Volume Size: 8GB
+Encryption: Enabled
+Delete on Termination: True
+```
+
+---
+
+#### 3. Nginx Installation Fix
+
+**Problem encountered:** Initial User Data used `yum install nginx` which failed silently.
+
+**Root cause:** Nginx not available in Amazon Linux 2 base repositories.
+
+**Solution:** Use `amazon-linux-extras install nginx1` instead.
+
+**Updated User Data:**
+
+```bash
+#!/bin/bash
+amazon-linux-extras install nginx1 -y  # ✅ Correct method
+systemctl enable nginx
+systemctl start nginx
+```
+
+**Validation:**
+
+```bash
+ssh -J bastion frontend
+curl localhost
+# ✅ Output: "Welcome to nginx!" HTML page
+```
+
+---
+
+#### 4. Custom Hostnames for Easier Navigation
+
+**Problem:** Default hostnames like `ip-10-0-1-178` are hard to identify.
+
+**Solution:** Set custom hostnames in User Data:
+
+```bash
+# Bastion
+hostnamectl set-hostname bastion-qa
+
+# Backend instances
+hostnamectl set-hostname backend-1-qa
+hostnamectl set-hostname backend-2-qa
+
+# Frontend instances
+hostnamectl set-hostname frontend-1-qa
+hostnamectl set-hostname frontend-2-qa
+```
+
+**Result:**
+
+```bash
+# Before: [ec2-user@ip-10-0-1-178 ~]$
+# After:  [ec2-user@frontend-1-qa ~]$
+```
+
+Much easier to identify which instance you're working on! ✅
+
+---
+
+#### 5. Enhanced Terraform Outputs
+
+**Problem:** Had to manually construct SSH commands and remember IPs.
+
+**Solution:** Created comprehensive output guide with copy-paste commands.
+
+**New outputs:**
+
+- `bastion_ssh_command`: Direct SSH with agent forwarding
+- `backend_ssh_commands`: Jump commands via Bastion
+- `frontend_ssh_commands`: Jump commands via Bastion
+- `frontend_http_urls`: HTTP URLs for browser testing
+- `quick_access_guide`: Formatted guide with all access methods
+
+**Example output:**
+
+```bash
+terraform output quick_access_guide
+
+═══════════════════════════════════════════════════════════
+MOVIE ANALYST - QUICK ACCESS GUIDE
+═══════════════════════════════════════════════════════════
+
+📦 BASTION (Jump Host):
+   ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.208.225.246
+
+🔧 BACKEND INSTANCES:
+   ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@54.208.225.246 ec2-user@10.0.11.25  # backend-1
+   ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@54.208.225.246 ec2-user@10.0.12.30  # backend-2
+
+🌐 FRONTEND INSTANCES:
+   ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@54.208.225.246 ec2-user@10.0.1.178  # frontend-1
+   ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@54.208.225.246 ec2-user@10.0.1.190  # frontend-2
+
+🌍 FRONTEND WEB ACCESS:
+   http://18.205.243.5  # frontend-1
+   http://3.92.45.120   # frontend-2
+```
+
+---
+
+### Key Learnings (Concepts Mastered Today)
+
+#### 1. Conditional Expressions in Terraform
+
+**Question I had:** What's the most professional way to write conditionals?
+
+**What I learned:**
+
+```hcl
+# ❌ Redundant
+enable_monitoring = terraform.workspace == "prod" ? true : false
+
+# ✅ Clean and professional
+enable_monitoring = terraform.workspace == "prod"
+```
+
+**Why:** Terraform comparison operators already return boolean values. The ternary `? true : false` is unnecessary.
+
+**When to use explicit ternary:**
+
+```hcl
+# When you need different values (not just true/false)
+instance_type = terraform.workspace == "prod" ? "t3.small" : "t3.micro"
+```
+
+---
+
+#### 2. User Data vs Configuration Management
+
+**Confusion:** Should we install everything with User Data or wait for Ansible?
+
+**What I learned - Clear separation of concerns:**
+
+| Tool                      | Purpose                | When it runs             | What it manages                                                   |
+| ------------------------- | ---------------------- | ------------------------ | ----------------------------------------------------------------- |
+| **User Data (Terraform)** | OS-level setup         | Once (instance creation) | System packages, timezone, base directories, web servers          |
+| **Ansible**               | Application deployment | Every deployment         | Application code, dependencies, configuration, process management |
+
+**Analogy:**
+
+- **User Data** = Building the house (foundation, walls, electricity)
+- **Ansible** = Furnishing the house (furniture, decorations, appliances)
+
+**Example:**
+
+```bash
+# User Data (Terraform) - Infrastructure
+amazon-linux-extras install nginx1   # ✅ Web server is infrastructure
+timedatectl set-timezone...           # ✅ OS configuration
+
+# Ansible (later) - Application
+git clone movie-analyst-repo          # ✅ Application code
+npm install                            # ✅ Application dependencies
+pm2 start server.js                   # ✅ Application process
+```
+
+---
+
+#### 3. Frontend Instance Placement (Public vs Private)
+
+**Question:** Why are frontend instances in public subnets when backend is private?
+
+**What I learned:**
+
+**Frontend must be in public subnet because:**
+
+- Nginx serves static files (HTML, CSS, JS) directly to users
+- Users' browsers need to establish direct connection
+- Static assets can be large (images, videos)
+- ALB can't efficiently serve large static files
+
+**Backend can be in private subnet because:**
+
+- Only serves API responses (small JSON payloads)
+- All traffic goes through ALB (single entry point)
+- ALB handles SSL termination and routing
+- Backend never directly accessible from internet
+
+**Architecture pattern:**
+
+```
+Public Subnet:   Frontend (Nginx) + ALB
+                 ↓ (static files to users)
+                 ↓ (API calls to ALB)
+Private Subnet:  Backend (Node.js API)
+                 ↓ (database queries)
+Private Subnet:  RDS MySQL
+```
+
+---
+
+#### 4. Security Group Strategy for Frontend
+
+**Confusion:** Should frontend accept HTTP from 0.0.0.0/0 (internet)?
+
+**What I learned - It depends on architecture:**
+
+**Current architecture (ALB + Frontend):**
+
+```hcl
+# Frontend SG - NO internet access
+ingress {
+  description     = "HTTP from ALB only"
+  security_groups = [aws_security_group.alb.id]
+}
+```
+
+**Why this is correct:**
+
+- Users connect to ALB (not directly to instances)
+- ALB handles SSL termination, health checks, traffic distribution
+- Frontend instances are "backend" to the ALB
+- More secure (fewer public endpoints)
+
+**Alternative architecture (Frontend only, no ALB):**
+
+```hcl
+# Frontend SG - Direct internet access
+ingress {
+  description = "HTTP from internet"
+  cidr_blocks = ["0.0.0.0/0"]
+}
+```
+
+**Why we're NOT using this:**
+
+- No load balancing
+- No automatic failover
+- No SSL termination
+- Manual DNS updates if instance fails
+
+**Key insight:** Frontend instances in public subnets doesn't mean they accept internet traffic. Public subnet means they can _initiate_ outbound connections (yum updates, npm packages).
+
+---
+
+#### 5. Amazon Linux Extras Repository
+
+**Problem:** `yum install nginx` failed silently in User Data.
+
+**What I learned:**
+
+Amazon Linux 2 has multiple package sources:
+
+1. **Base repositories** (`yum install`): Core packages (git, curl, vim)
+2. **Amazon Linux Extras** (`amazon-linux-extras install`): Optional packages (nginx, docker, node.js)
+
+**Why Amazon Linux Extras exists:**
+
+- Provides newer versions than base repos
+- Enables/disables package groups easily
+- Better suited for modern web stacks
+
+**Available extras topics:**
+
+```bash
+amazon-linux-extras list
+# nginx1, docker, postgresql14, php8.2, etc.
+```
+
+**Correct usage:**
+
+```bash
+# ❌ Wrong
+yum install nginx
+# Result: "No package nginx available"
+
+# ✅ Correct
+amazon-linux-extras install nginx1 -y
+# Result: Installs Nginx 1.28.0
+```
+
+**Other common extras:**
+
+- `docker`: Docker CE
+- `nginx1`: Nginx 1.28
+- `postgresql14`: PostgreSQL 14
+- `php8.2`: PHP 8.2
+
+---
+
+#### 6. SSH Agent Forwarding (-A flag)
+
+**What I learned:**
+
+**Command comparison:**
+
+```bash
+# Without agent forwarding
+ssh -i ~/.ssh/key.pem ec2-user@bastion
+# Then from bastion:
+ssh -i ~/.ssh/key.pem ec2-user@backend  # ❌ Key not available on bastion
+
+# With agent forwarding (-A flag)
+ssh -A -i ~/.ssh/key.pem ec2-user@bastion
+# Then from bastion:
+ssh ec2-user@backend  # ✅ Works! Key forwarded from local machine
+```
+
+**How it works:**
+
+1. Your local machine has the private key
+2. `-A` flag forwards your SSH agent to bastion
+3. Bastion can use your key (without storing it)
+4. More secure (private key never leaves your machine)
+
+**Security consideration:**
+
+- Only use `-A` on trusted jump hosts (like our Bastion)
+- Don't use on untrusted servers
+
+---
+
+### Challenges and Solutions
+
+#### Challenge 1: Nginx Installation Failed Silently
+
+**Problem:**
+
+```bash
+# User Data script ran successfully (no errors)
+# But nginx wasn't installed
+yum install -y nginx  # Package not found
+```
+
+**Why it was hard to debug:**
+
+- User Data runs in background (no terminal output)
+- Instance boots successfully even if User Data fails
+- Had to SSH and check logs manually
+
+**Solution found:**
+
+```bash
+# 1. SSH to instance
+ssh frontend
+
+# 2. Check User Data logs
+sudo cat /var/log/cloud-init-output.log
+
+# 3. Found error: "No package nginx available"
+
+# 4. Fixed by using amazon-linux-extras
+sudo amazon-linux-extras install nginx1 -y
+```
+
+**Lesson learned:**
+
+- Always add logging to User Data: `exec > >(tee /var/log/user-data.log...)`
+- Test commands manually before adding to User Data
+- Check `/var/log/cloud-init-output.log` if services don't start
+
+---
+
+#### Challenge 2: Frontend HTTP Access Blocked
+
+**Problem:**
+
+```bash
+# From browser
+http://18.205.243.5
+# Result: Connection timeout
+```
+
+**Initial thought:** "Something is wrong with the security group!"
+
+**Investigation:**
+
+```bash
+# 1. Check frontend SG in AWS Console
+# Inbound rules:
+# - HTTP: Source = ALB security group ← Not 0.0.0.0/0
+
+# 2. Check if Nginx is running
+ssh frontend
+curl localhost  # ✅ Works
+```
+
+**Realization:**
+
+- Nginx is running correctly ✅
+- Security group is configured correctly ✅
+- Frontend _should not_ accept direct internet traffic ✅
+- Traffic must go through ALB (which doesn't exist yet)
+
+**Solution:**
+
+- This is **expected behavior**
+- Frontend HTTP access will work after ALB is created (Day 10)
+- For now, validation via `curl localhost` is sufficient
+
+**Architectural understanding:**
+
+```
+Current (Day 8):
+User browser → Frontend ❌ Blocked (by design)
+
+Future (Day 10):
+User browser → ALB → Frontend ✅ Will work
+```
+
+---
+
+#### Challenge 3: Distinguishing Between Instances
+
+**Problem:**
+
+```bash
+[ec2-user@ip-10-0-1-178 ~]$  # Which instance is this?
+[ec2-user@ip-10-0-11-25 ~]$  # And this?
+```
+
+**Impact:**
+
+- Easy to run commands on wrong instance
+- Hard to document which instance has which issue
+- Confusing when troubleshooting
+
+**Solution:** Custom hostnames via User Data
+
+```bash
+hostnamectl set-hostname frontend-1-qa
+```
+
+**Result:**
+
+```bash
+[ec2-user@frontend-1-qa ~]$  # ✅ Clear!
+[ec2-user@backend-2-qa ~]$   # ✅ Clear!
+[ec2-user@bastion-qa ~]$     # ✅ Clear!
+```
+
+**Additional benefit:**
+
+- Hostname appears in CloudWatch logs
+- Easier to identify in monitoring dashboards
+- Clearer in audit trails
+
+---
+
+### Commands Used
+
+```bash
+# Terraform workflow
+terraform fmt -recursive
+terraform validate
+terraform plan
+terraform apply
+
+# Enhanced outputs
+terraform output quick_access_guide
+terraform output frontend_ssh_commands
+terraform output frontend_http_urls
+
+# SSH connections (via outputs)
+ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.208.225.246
+ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@54.208.225.246 ec2-user@10.0.1.178
+
+# Nginx validation
+curl localhost  # From inside frontend instance
+sudo systemctl status nginx
+sudo cat /var/log/cloud-init-output.log
+
+# Manual Nginx installation (for existing instances)
+sudo amazon-linux-extras install nginx1 -y
+sudo systemctl enable nginx
+sudo systemctl start nginx
+```
+
+---
+
+### Files Created/Modified
+
+**Created:**
+
+```
+terraform/modules/compute/iam.tf  # Added frontend IAM role/profile
+```
+
+**Modified:**
+
+```
+terraform/modules/compute/main.tf
+  - Updated monitoring to use variable
+  - Added custom hostnames to all instances
+  - Fixed Nginx installation in frontend User Data
+  - Added logging to User Data scripts
+
+terraform/modules/compute/variables.tf
+  - Added enable_detailed_monitoring variable
+  - Added frontend_instance_count variable
+  - Added frontend_instance_type variable
+  - Added frontend_sg_id variable
+
+terraform/modules/compute/outputs.tf
+  - Added frontend_instance_ids
+  - Added frontend_private_ips
+  - Added frontend_public_ips
+
+terraform/main.tf
+  - Added enable_detailed_monitoring with conditional logic
+  - Added frontend configuration variables
+
+terraform/outputs.tf
+  - Complete rewrite with enhanced outputs
+  - Added quick_access_guide with formatted display
+  - Added copy-paste ready SSH commands
+  - Added HTTP URLs for frontend access
+```
+
+---
+
+### Infrastructure Created
+
+**AWS Resources (9 new):**
+
+1-2. **Frontend EC2 Instances:**
+
+- frontend-1-qa (10.0.1.178, us-east-1a)
+- frontend-2-qa (10.0.1.190, us-east-1b)
+
+3. **Frontend IAM Role:** frontend-role
+
+   - Policy: AmazonSSMManagedInstanceCore
+   - Policy: CloudWatchAgentServerPolicy
+
+4. **Frontend IAM Instance Profile:** frontend-profile
+
+5-6. **Frontend Elastic IPs:**
+
+- 18.205.243.5 (frontend-1)
+- 3.92.45.120 (frontend-2)
+
+**Software installed:**
+
+- Nginx 1.28.0
+- Git, wget, curl, vim
+- Custom MOTD banner
+- Timezone: America/Bogota
+
+**Cost impact:**
+
+| Resource         | Cost                       | Free Tier  | Actual Cost     |
+| ---------------- | -------------------------- | ---------- | --------------- |
+| 2x EC2 t3.micro  | $0.0104/hr × 2 = ~$15/mo   | 750 hrs/mo | $0              |
+| 2x EBS GP3 8GB   | $0.08/GB-mo × 16GB = $1.28 | 30GB/mo    | $0              |
+| 2x Public IPs    | $3.60/mo each = $7.20      | N/A        | $7.20/mo        |
+| Basic Monitoring | Free                       | Free       | $0              |
+| **Total**        |                            |            | **$7.20/month** |
+
+**Note:** Public IPs cost $3.60/month each **only if instance is stopped**. While running, they're free. Cost mitigation: Use Elastic IPs (free while attached) or destroy instances when not in use.
+
+---
+
+### Key Decisions Made
+
+1. **Frontend in public subnets:** Needed for direct internet connectivity (yum updates, npm packages)
+2. **HTTP only from ALB:** Security best practice (ALB is single public entry point)
+3. **Conditional monitoring:** Save $4.20/month in QA by using basic monitoring
+4. **Custom hostnames:** Improve operational clarity (easier to identify instances)
+5. **amazon-linux-extras for Nginx:** Use Amazon-recommended installation method
+6. **Public IPs for frontend:** Alternative to NAT Gateway for outbound traffic (cost optimization)
+7. **Enhanced Terraform outputs:** Improve DX with copy-paste ready commands
+
+---
+
+### Validation Results
+
+#### SSH Access Tests
+
+✅ **Bastion to Frontend:**
+
+```bash
+ssh -J bastion frontend-1
+[ec2-user@frontend-1-qa ~]$  # Connected successfully
+```
+
+✅ **Nginx Status:**
+
+```bash
+sudo systemctl status nginx
+# Active: active (running)
+```
+
+✅ **HTTP Locally:**
+
+```bash
+curl localhost
+# Welcome to nginx! (HTML output)
+```
+
+⏸️ **HTTP from Browser:**
+
+```bash
+http://18.205.243.5
+# Connection timeout (expected - waiting for ALB)
+```
+
+**Note:** This will work after ALB is created (Day 10). Security group correctly blocks direct internet access.
+
+---
+
+### Next Steps (Day 9)
+
+**Database Module - RDS MySQL:**
+
+- [ ] Create `modules/database/` structure
+- [ ] RDS MySQL instance (db.t3.micro, free tier)
+- [ ] DB Subnet Group (2 private subnets)
+- [ ] Automated backups (minimal retention)
+- [ ] Multi-AZ: NO (cost optimization for QA)
+- [ ] Connect from Backend and test
+
+**Estimated time:** 2-3 hours
+
+---
+
+### Study Notes for Presentation
+
+**Concepts to remember:**
+
+- User Data vs Ansible: Infrastructure vs Application
+- amazon-linux-extras: Amazon's package repository for modern tools
+- Public subnet ≠ public access (routing determines access)
+- Security groups: Frontend accepts from ALB only (not internet)
+- Conditional monitoring: workspace-based cost optimization
+- SSH agent forwarding: Security best practice for jump hosts
+
+**Questions evaluator might ask:**
+
+1. **"Why can't I access frontend from browser?"**
+   → Correct by design. Traffic must flow through ALB (load balancer pattern). Direct access bypasses load balancing and SSL termination.
+
+2. **"Why install Nginx with User Data instead of Ansible?"**
+   → Nginx is infrastructure (web server), not application code. User Data for OS-level, Ansible for app-level.
+
+3. **"Why frontend in public subnet if it doesn't accept internet traffic?"**
+   → Public subnet means it can _initiate_ outbound connections (yum updates). Inbound traffic still controlled by security group.
+
+4. **"Why enable_detailed_monitoring = terraform.workspace == "prod" instead of ternary?"**
+   → Comparison already returns boolean. Ternary `? true : false` is redundant. Cleaner and more professional.
+
+5. **"What if Nginx installation fails?"**
+   → User Data logs to `/var/log/cloud-init-output.log`. Can SSH and check logs. Can also manually install and then update User Data for future instances.
+
+**Architecture understanding:**
+
+- Frontend serves static files directly to users (fast)
+- Backend handles API logic via ALB (scalable)
+- Database isolates data in private subnet (secure)
+- Bastion provides secure SSH access (auditable)
+
+---

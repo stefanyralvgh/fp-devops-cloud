@@ -3,7 +3,7 @@
 **Project:** Cloud Migration with Terraform & Ansible  
 **Cloud Provider:** AWS  
 **Environments:** QA, Production  
-**Last Updated:** January 10, 2026
+**Last Updated:** January 13, 2026
 
 ---
 
@@ -1595,13 +1595,209 @@ cat /etc/motd
 
 ---
 
-#### Next Steps (Day 8)
+# Day 8 - Frontend Compute Infrastructure
 
-**Frontend instances:**
+## Decision: Frontend EC2 Instances in Public Subnets
 
-- Deploy in public subnets (need direct internet access)
-- Install Nginx web server
-- Configure to proxy to ALB
-- Validate HTTP access from browser
+**Date:** January 13, 2026  
+**Status:** Implemented  
+**Workspace:** qa
 
 ---
+
+## Context
+
+The Movie Analyst platform requires a presentation layer to serve the user interface. The frontend must:
+
+- Serve static assets (HTML, CSS, JavaScript, images)
+- Make API calls to the backend via an Application Load Balancer
+- Download dependencies and updates from the internet
+- Be highly available across multiple Availability Zones
+
+Two architectural approaches were considered:
+
+1. Static hosting (S3 + CloudFront)
+2. Dynamic web server (EC2 + Nginx)
+
+---
+
+## Decision
+
+Deploy frontend EC2 instances running Nginx in **public subnets**, distributed across multiple Availability Zones, with traffic routed through an Application Load Balancer.
+
+### Instance Specifications
+
+- Instance Type: t3.micro (free tier eligible)
+- AMI: Amazon Linux 2 (latest)
+- Count: 2 (one per AZ)
+- Subnets:
+  - public-subnet-1 (us-east-1a)
+  - public-subnet-2 (us-east-1b)
+- Security Group: frontend-sg
+- IAM Role: frontend-role (SSM + CloudWatch)
+- Public IPs: Auto-assigned
+- Web Server: Nginx (via amazon-linux-extras)
+
+### Storage
+
+- Volume Type: gp3
+- Size: 8 GB
+- Encryption: Enabled
+- Delete on Termination: True
+
+---
+
+## Justification
+
+### Why EC2 over S3 + CloudFront
+
+| Aspect      | S3 + CloudFront | EC2 + Nginx         |
+| ----------- | --------------- | ------------------- |
+| Cost        | ~$5/month       | $0 (free tier)      |
+| Flexibility | Static only     | Dynamic capable     |
+| Learning    | Limited         | Full infra exposure |
+| Complexity  | Low             | Medium              |
+| Performance | Global CDN      | Regional            |
+
+Primary reasons:
+
+- Educational value
+- Free tier availability
+- Flexibility for future SSR or proxying
+- Consistency with backend compute model
+
+Trade-off accepted: Regional availability instead of global CDN.
+
+---
+
+## Why Public Subnets
+
+Frontend instances require outbound internet access for:
+
+- Package updates
+- Dependency installation
+- CDN downloads
+- Time synchronization
+
+### Alternatives Considered
+
+- Private subnet + NAT Gateway (rejected due to cost)
+- VPC Endpoints (rejected due to complexity)
+
+Decision: Public subnet with strict security groups.
+
+---
+
+## Implementation Details
+
+### Nginx Installation
+
+Incorrect approach:
+
+```bash
+yum install -y nginx
+```
+
+Correct approach:
+
+```bash
+amazon-linux-extras install nginx1 -y
+systemctl enable nginx
+systemctl start nginx
+```
+
+Reason: Nginx is provided via Amazon Linux Extras on AL2.
+
+---
+
+### Custom Hostnames
+
+Purpose: Easier troubleshooting and clearer logs.
+
+```bash
+hostnamectl set-hostname frontend-${count.index + 1}-${var.environment}
+echo "127.0.0.1 frontend-${count.index + 1}-${var.environment}" >> /etc/hosts
+```
+
+---
+
+### Security Group Design
+
+- HTTP: Only from ALB security group
+- SSH: Only from Bastion security group
+
+Key principle: Frontend must not be directly exposed to the internet.
+
+Traffic flow:
+
+User → ALB → Frontend → Backend
+
+---
+
+## Monitoring Strategy
+
+- QA: Basic monitoring (5-minute intervals)
+- Prod: Detailed monitoring (1-minute intervals)
+
+Decision based on cost vs observability needs.
+
+---
+
+## User Data Logging
+
+Enable full logging to avoid silent failures:
+
+```bash
+#!/bin/bash
+exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+```
+
+Benefits:
+
+- Debuggable boot process
+- Persistent logs
+- Faster issue resolution
+
+---
+
+## Cost Analysis (QA)
+
+- EC2 t3.micro (2): $0
+- EBS gp3 (8 GB x2): $0
+- Monitoring: $0
+- Total: $0/month
+
+---
+
+## Security Considerations
+
+- Least-privilege security groups
+- Encrypted EBS volumes
+- IAM roles instead of credentials
+- No direct internet access to backend or database
+
+---
+
+## Key Learnings
+
+- Public subnet does not imply public access
+- amazon-linux-extras is mandatory for modern packages
+- User Data logging is critical
+- Security group references are safer than CIDRs
+- Custom hostnames improve operability
+
+---
+
+## Dependencies
+
+Depends on:
+
+- VPC and networking
+- Bastion host
+- Frontend security group
+
+Required by:
+
+- Application Load Balancer
+- Configuration management
+- End-to-end application flow
