@@ -27,7 +27,7 @@ resource "aws_instance" "bastion" {
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
 
   # Enable detailed monitoring (free tier)
-  monitoring = false
+  monitoring = var.enable_detailed_monitoring
 
   # Root volume configuration
   root_block_device {
@@ -100,7 +100,7 @@ resource "aws_instance" "backend" {
 
 
   # Enable detailed monitoring
-  monitoring = false
+  monitoring = var.enable_detailed_monitoring
 
   # Root volume configuration
   root_block_device {

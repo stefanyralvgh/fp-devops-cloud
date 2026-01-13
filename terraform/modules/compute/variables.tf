@@ -71,3 +71,8 @@ variable "aws_region" {
   type = string
 }
 
+variable "enable_detailed_monitoring" {
+  description = "Enable detailed CloudWatch monitoring (1-min intervals vs 5-min)"
+  type        = bool
+  default     = false
+}
