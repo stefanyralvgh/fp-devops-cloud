@@ -123,3 +123,51 @@ resource "aws_iam_instance_profile" "backend" {
   name = "${var.project_name}-${var.environment}-backend-profile"
   role = aws_iam_role.backend.name
 }
+
+
+
+# FRONTEND IAM ROLE
+
+resource "aws_iam_role" "frontend" {
+  name = "${var.environment}-frontend-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.environment}-frontend-role"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "frontend_ssm" {
+  role       = aws_iam_role.frontend.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy_attachment" "frontend_cloudwatch" {
+  role       = aws_iam_role.frontend.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_instance_profile" "frontend" {
+  name = "${var.environment}-frontend-profile"
+  role = aws_iam_role.frontend.name
+
+  tags = {
+    Name        = "${var.environment}-frontend-profile"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}

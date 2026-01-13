@@ -76,3 +76,23 @@ variable "enable_detailed_monitoring" {
   type        = bool
   default     = false
 }
+
+
+# FRONTEND VARIABLES
+
+variable "frontend_instance_count" {
+  description = "Number of frontend instances to create"
+  type        = number
+  default     = 2
+}
+
+variable "frontend_instance_type" {
+  description = "EC2 instance type for frontend"
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "frontend_sg_id" {
+  description = "Security group ID for frontend instances"
+  type        = string
+}

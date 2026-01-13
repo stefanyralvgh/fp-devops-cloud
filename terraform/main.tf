@@ -61,9 +61,14 @@ module "compute" {
   backend_instance_type  = "t3.micro"
   backend_instance_count = 2
 
+  # Frontend configuration
+  frontend_instance_count = 2
+  frontend_instance_type  = "t3.micro"
+  frontend_sg_id          = module.security.frontend_sg_id
+
 
   tags                       = var.common_tags
   aws_region                 = var.aws_region
-  enable_detailed_monitoring = terraform.workspace == "prod" ? true : false
+  enable_detailed_monitoring = terraform.workspace == "prod"
 
 }

@@ -73,8 +73,8 @@ output "bastion_public_ip" {
 }
 
 output "bastion_ssh_command" {
-  description = "SSH command to connect to bastion"
-  value       = "ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}"
+  description = "SSH command to connect to Bastion (with agent forwarding)"
+  value       = "ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}"
 }
 
 
@@ -86,14 +86,54 @@ output "backend_private_ips" {
 }
 
 output "backend_ssh_commands" {
-  description = "SSH commands to connect to Backend via Bastion"
+  description = "SSH commands to connect to backend instances (via Bastion)"
   value = [
-    for ip in module.compute.backend_private_ips :
-    "ssh -J ec2-user@${module.compute.bastion_public_ip} ec2-user@${ip}"
+    for idx, ip in module.compute.backend_private_ips :
+    "ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@${module.compute.bastion_public_ip} ec2-user@${ip}  # backend-${idx + 1}"
   ]
 }
 
 output "backend_availability_zones" {
   description = "Availability zones of Backend instances"
   value       = module.compute.backend_availability_zones
+}
+
+
+# COMPUTE OUTPUTS (FRONTEND)
+
+output "frontend_public_ips" {
+  description = "Public IPs of frontend instances"
+  value       = module.compute.frontend_public_ips
+}
+
+output "frontend_ssh_commands" {
+  description = "SSH commands to connect to frontend instances (via Bastion)"
+  value = [
+    for idx, ip in module.compute.frontend_private_ips :
+    "ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@${module.compute.bastion_public_ip} ec2-user@${ip}  # frontend-${idx + 1}"
+  ]
+}
+
+output "quick_access_guide" {
+  description = "Quick reference for accessing infrastructure"
+  value = <<-EOT
+  
+  ═══════════════════════════════════════════════════════════
+  MOVIE ANALYST - QUICK ACCESS GUIDE
+  ═══════════════════════════════════════════════════════════
+  
+  📦 BASTION (Jump Host):
+     ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}
+  
+  🔧 BACKEND INSTANCES:
+     ${join("\n     ", [for idx, ip in module.compute.backend_private_ips : "ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@${module.compute.bastion_public_ip} ec2-user@${ip}  # backend-${idx + 1}"])}
+  
+  🌐 FRONTEND INSTANCES:
+     ${join("\n     ", [for idx, ip in module.compute.frontend_private_ips : "ssh -A -i ~/.ssh/movie-analyst-bastion-key -J ec2-user@${module.compute.bastion_public_ip} ec2-user@${ip}  # frontend-${idx + 1}"])}
+  
+  🌍 FRONTEND WEB ACCESS:
+     ${join("\n     ", [for idx, ip in module.compute.frontend_public_ips : "http://${ip}  # frontend-${idx + 1}"])}
+  
+  ═══════════════════════════════════════════════════════════
+  EOT
 }

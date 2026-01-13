@@ -146,3 +146,118 @@ resource "aws_instance" "backend" {
     Tier        = "Application"
   }
 }
+
+
+# FRONTEND INSTANCES
+
+
+resource "aws_instance" "frontend" {
+  count = var.frontend_instance_count
+
+  ami                         = data.aws_ami.amazon_linux_2.id
+  instance_type               = var.frontend_instance_type
+  key_name                    = var.key_name
+  subnet_id                   = var.public_subnet_ids[count.index % length(var.public_subnet_ids)]
+  vpc_security_group_ids      = [var.frontend_sg_id]
+  iam_instance_profile        = aws_iam_instance_profile.frontend.name
+  associate_public_ip_address = true # Frontend needs public IP
+
+  # Enable detailed monitoring based on environment
+  monitoring = var.enable_detailed_monitoring
+
+  # Root volume configuration
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 8
+    delete_on_termination = true
+    encrypted             = true
+
+    tags = {
+      Name = "${var.environment}-frontend-${count.index + 1}-root-volume"
+    }
+  }
+
+ # User data script
+  user_data = <<-EOF
+              #!/bin/bash
+              # Log everything for debugging
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              
+              # Update system
+              yum update -y
+              
+              # Install basic tools
+              yum install -y git wget curl vim
+              
+              # Install Nginx using amazon-linux-extras
+              amazon-linux-extras install nginx1 -y
+              
+              # Set timezone
+              timedatectl set-timezone America/Bogota
+              
+              # Create application directory
+              mkdir -p /var/www/movie-analyst
+              chown -R nginx:nginx /var/www/movie-analyst
+              
+              # Enable and start nginx
+              systemctl enable nginx
+              systemctl start nginx
+              
+              # Create banner
+              cat > /etc/motd <<'BANNER'
+              =====================================
+              Movie Analyst Frontend Server
+              Instance: ${count.index + 1}
+              Environment: ${var.environment}
+              =====================================
+              BANNER
+              
+              # Create simple test page
+              cat > /usr/share/nginx/html/index.html <<'HTML'
+              <!DOCTYPE html>
+              <html>
+              <head>
+                  <title>Movie Analyst - Frontend ${count.index + 1}</title>
+                  <style>
+                      body {
+                          font-family: Arial, sans-serif;
+                          max-width: 800px;
+                          margin: 50px auto;
+                          padding: 20px;
+                          background: #f0f0f0;
+                      }
+                      .container {
+                          background: white;
+                          padding: 30px;
+                          border-radius: 8px;
+                          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                      }
+                      h1 { color: #333; }
+                      .status { color: #28a745; font-weight: bold; }
+                      .info { background: #e9ecef; padding: 10px; border-radius: 4px; margin: 10px 0; }
+                  </style>
+              </head>
+              <body>
+                  <div class="container">
+                      <h1>🎬 Movie Analyst Platform</h1>
+                      <p class="status">✅ Frontend Server Running</p>
+                      <div class="info">
+                          <strong>Instance:</strong> ${count.index + 1}<br>
+                          <strong>Environment:</strong> ${var.environment}<br>
+                          <strong>Server:</strong> Nginx on Amazon Linux 2
+                      </div>
+                      <p>This server is ready to serve the Movie Analyst frontend application.</p>
+                  </div>
+              </body>
+              </html>
+              HTML
+              EOF
+
+  tags = {
+    Name        = "${var.environment}-frontend-${count.index + 1}"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    Role        = "Frontend"
+    Tier        = "Web"
+  }
+}
