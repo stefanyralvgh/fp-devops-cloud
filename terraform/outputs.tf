@@ -116,11 +116,15 @@ output "frontend_ssh_commands" {
 
 output "quick_access_guide" {
   description = "Quick reference for accessing infrastructure"
-  value = <<-EOT
+  value       = <<-EOT
   
   ═══════════════════════════════════════════════════════════
   MOVIE ANALYST - QUICK ACCESS GUIDE
   ═══════════════════════════════════════════════════════════
+
+  🔑 PREREQUISITE (Run once per terminal session):
+     eval $(ssh-agent -s)
+     ssh-add ~/.ssh/movie-analyst-bastion-key
   
   📦 BASTION (Jump Host):
      ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}

@@ -46,6 +46,10 @@ resource "aws_instance" "bastion" {
               #!/bin/bash
               # Update system
               yum update -y
+
+              # Set custom hostname
+              hostnamectl set-hostname bastion-${var.environment}
+              echo "127.0.0.1 bastion-${var.environment}" >> /etc/hosts
               
               # Install basic tools
               yum install -y git wget curl vim
@@ -123,6 +127,10 @@ resource "aws_instance" "backend" {
               # Install development tools
               yum groupinstall -y "Development Tools"
               yum install -y git wget curl vim
+
+              # Set custom hostname
+              hostnamectl set-hostname backend-${count.index + 1}-${var.environment}
+              echo "127.0.0.1 backend-${count.index + 1}-${var.environment}" >> /etc/hosts
               
               # Set timezone
               timedatectl set-timezone America/Bogota
@@ -177,7 +185,7 @@ resource "aws_instance" "frontend" {
     }
   }
 
- # User data script
+  # User data script
   user_data = <<-EOF
               #!/bin/bash
               # Log everything for debugging
@@ -194,6 +202,10 @@ resource "aws_instance" "frontend" {
               
               # Set timezone
               timedatectl set-timezone America/Bogota
+
+                # Set custom hostname
+                hostnamectl set-hostname frontend-${count.index + 1}-${var.environment}
+                echo "127.0.0.1 frontend-${count.index + 1}-${var.environment}" >> /etc/hosts
               
               # Create application directory
               mkdir -p /var/www/movie-analyst
