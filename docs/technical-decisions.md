@@ -1270,3 +1270,338 @@ monitoring = true
 - Reserved Instance: ~40% savings if running 24/7
 
 ---
+
+---
+
+## Day 7 - Backend Compute Infrastructure
+
+### Decision: Backend EC2 Instances in Private Subnets
+
+**Date:** January 11, 2026  
+**Status:** ✅ Implemented  
+**Workspace:** qa
+
+---
+
+#### Context
+
+The Node.js backend API requires compute resources to run the application layer. The backend needs to:
+
+- Accept traffic from the Application Load Balancer
+- Communicate with RDS MySQL database
+- Download dependencies from npm registry (internet access)
+- NOT be directly accessible from the internet (security)
+
+---
+
+#### Decision
+
+Deploy backend instances in **private subnets** across multiple Availability Zones with the following configuration:
+
+**Instance Specifications:**
+
+```
+Instance Type: t3.micro (free tier eligible)
+AMI: Amazon Linux 2 (latest, via data source)
+Count: 2 instances (one per AZ)
+Subnets: private-subnet-1 (us-east-1a), private-subnet-2 (us-east-1b)
+Security Group: backend-sg (port 3000 from ALB, SSH from Bastion)
+IAM Role: backend-role (SSM + CloudWatch permissions)
+```
+
+**Storage Configuration:**
+
+```
+Volume Type: GP3 (latest generation SSD)
+Volume Size: 8GB
+Encryption: Enabled
+Delete on Termination: True
+```
+
+**Monitoring:**
+
+```
+Detailed Monitoring: Disabled (QA), Enabled (Production)
+Rationale: Cost optimization for QA ($2.10/instance/month savings)
+```
+
+---
+
+#### Implementation Details
+
+##### User Data Script
+
+Automated initial configuration:
+
+```bash
+#!/bin/bash
+yum update -y                          # Security patches
+yum groupinstall -y "Development Tools" # GCC, make, etc. for npm packages
+yum install -y git wget curl vim       # Development tools
+timedatectl set-timezone America/Bogota # Timezone alignment
+mkdir -p /opt/movie-analyst            # Application directory
+```
+
+**Why Development Tools:**
+
+- Some npm packages (e.g., bcrypt, node-sass) require native compilation
+- Without Development Tools, `npm install` would fail on native dependencies
+
+##### IAM Role Design
+
+**Policies attached:**
+
+1. **AmazonSSMManagedInstanceCore**
+
+   - Enables AWS Systems Manager Session Manager
+   - Alternative to SSH for troubleshooting
+   - No need for open SSH ports in security group
+
+2. **CloudWatchAgentServerPolicy**
+   - Allows instance to send metrics/logs to CloudWatch
+   - Enables application-level monitoring (beyond basic EC2 metrics)
+   - Required for custom application metrics
+
+**Why IAM role vs hardcoded credentials:**
+
+- Security: No credentials stored on instance
+- Automatic credential rotation
+- Least privilege: Role can be modified without touching instances
+- AWS best practice
+
+##### Network Placement Strategy
+
+**Distribution across AZs:**
+
+```
+Backend-1: private-subnet-1 (10.0.11.0/24, us-east-1a)
+Backend-2: private-subnet-2 (10.0.12.0/24, us-east-1b)
+```
+
+**Why multi-AZ:**
+
+- High availability: If one AZ fails, other continues serving traffic
+- ALB can distribute load across both instances
+- RDS Multi-AZ requires backend in both AZs for optimal latency
+
+**Why modulo operator `count.index % length(subnets)`:**
+
+- If we had 3 instances and 2 subnets:
+  - Instance 0: 0 % 2 = 0 → subnet[0]
+  - Instance 1: 1 % 2 = 1 → subnet[1]
+  - Instance 2: 2 % 2 = 0 → subnet[0] (wraps around)
+- Ensures even distribution even if instance count != subnet count
+
+---
+
+#### Validation Results
+
+##### Internet Access Test (via NAT Gateway)
+
+**Test performed:**
+
+```bash
+# SSH to Bastion
+ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
+
+# SSH to Backend from Bastion
+ssh ec2-user@10.0.11.25  # Backend-1 private IP
+
+# Test outbound connectivity
+ping -c 3 google.com          # ✅ Success
+curl -I https://registry.npmjs.org  # ✅ Success (HTTP 200)
+```
+
+**Result:** Backend instances successfully reach internet via NAT Gateway
+
+**Why this matters:**
+
+- Confirms NAT Gateway routing is correct
+- Validates `npm install` will work during deployment
+- Ensures `yum update` can fetch packages
+
+##### SSH Access Test (Jump Host Pattern)
+
+**Test performed:**
+
+```bash
+# Two-hop SSH (local → bastion → backend)
+ssh -J ec2-user@54.144.192.77 ec2-user@10.0.11.25
+
+# Alternative: ProxyJump flag
+ssh -o ProxyJump=ec2-user@54.144.192.77 ec2-user@10.0.11.25
+```
+
+**Result:** ✅ Successfully connected to backend via Bastion
+
+**Security validation:**
+
+- Direct SSH from internet to backend: ❌ Blocked (as intended)
+- SSH from Bastion to backend: ✅ Allowed (security group rule working)
+
+##### User Data Execution
+
+**Verification:**
+
+```bash
+# Check cloud-init logs
+sudo tail -f /var/log/cloud-init-output.log
+
+# Verify timezone
+timedatectl
+# Expected: America/Bogota
+
+# Verify application directory
+ls -la /opt/movie-analyst
+# Expected: Directory exists
+
+# Verify banner
+cat /etc/motd
+# Expected: Custom Movie Analyst banner
+```
+
+**Result:** All User Data tasks executed successfully
+
+---
+
+#### Alternative Approaches Considered
+
+##### Auto Scaling Group (ASG)
+
+**Not selected for this project:**
+
+- Adds complexity (launch templates, scaling policies)
+- Overkill for fixed workload (movie database queries)
+- Would increase costs (ALB health checks, CloudWatch metrics)
+
+**When to use ASG:**
+
+- Variable traffic patterns
+- Need automatic scaling based on CPU/memory
+- Production environments requiring auto-recovery
+
+##### Spot Instances
+
+**Not selected:**
+
+- Risk of interruption (AWS can reclaim with 2-min notice)
+- Not acceptable for application tier
+- Savings: ~60% vs On-Demand, but risk too high
+
+**When to use Spot:**
+
+- Batch processing (can tolerate interruptions)
+- Stateless workers
+- Non-critical environments
+
+##### Larger Instance Types (t3.small, t3.medium)
+
+**Not selected for QA:**
+
+- t3.micro sufficient for development workload
+- Cost optimization: $0 (free tier) vs $12-24/month
+- Can scale up in production if needed
+
+**When to use larger instances:**
+
+- High CPU workload (complex calculations)
+- Memory-intensive applications (large in-memory caches)
+- Production environments with strict SLAs
+
+---
+
+#### Cost Analysis
+
+**Backend infrastructure monthly cost (QA workspace):**
+
+| Resource          | Cost                       | Free Tier  | Actual Cost  |
+| ----------------- | -------------------------- | ---------- | ------------ |
+| 2x EC2 t3.micro   | $0.0104/hr × 2 = ~$15/mo   | 750 hrs/mo | $0           |
+| 2x EBS GP3 8GB    | $0.08/GB-mo × 16GB = $1.28 | 30GB/mo    | $0           |
+| Data Transfer Out | $0.09/GB                   | 100GB/mo   | $0           |
+| Basic Monitoring  | Free                       | Free       | $0           |
+| **Total**         |                            |            | **$0/month** |
+
+**Production considerations:**
+
+- Detailed monitoring: +$2.10/instance/month = $4.20
+- Larger instances (t3.small): ~$12/month per instance
+- Reserved Instances: 40% savings if running 24/7
+
+---
+
+#### Security Considerations
+
+**Network isolation:**
+
+- ✅ No direct internet access (inbound)
+- ✅ Outbound via NAT Gateway only
+- ✅ Only ALB can send traffic to port 3000
+- ✅ SSH only from Bastion
+
+**Data protection:**
+
+- ✅ EBS volumes encrypted at rest (AWS-managed keys)
+- ✅ IAM roles instead of hardcoded credentials
+- ✅ Security groups implement least privilege
+
+**Potential improvements for production:**
+
+- Use Customer Managed Keys (CMK) for encryption
+- Enable VPC Flow Logs for traffic analysis
+- Implement AWS GuardDuty for threat detection
+- Add CloudWatch Logs for application logging
+
+---
+
+#### Trade-offs Accepted
+
+**No Auto Scaling:**
+
+- **Benefit:** Simpler architecture, easier to understand
+- **Cost:** Manual intervention if traffic spikes
+- **Mitigation:** Can add ASG later if needed
+
+**Basic Monitoring in QA:**
+
+- **Benefit:** Saves $4.20/month
+- **Cost:** 5-minute metric intervals vs 1-minute
+- **Mitigation:** Enabled in production where needed
+
+**Single NAT Gateway:**
+
+- **Benefit:** Saves $32/month vs dual NAT
+- **Cost:** If us-east-1a fails, backend loses internet
+- **Mitigation:** Acceptable for QA; prod would use dual NAT
+
+---
+
+#### Key Learnings
+
+**Concepts mastered:**
+
+- **IAM Instance Profiles:** How to grant EC2 permissions without credentials
+- **User Data execution:** Runs once on first boot as root
+- **Multi-AZ distribution:** Using modulo operator for even placement
+- **Jump host pattern:** Two-hop SSH via Bastion
+- **NAT Gateway validation:** Testing outbound connectivity
+
+**Common pitfalls avoided:**
+
+- Including `sudo` in User Data (already runs as root)
+- Using `yum install nodejs` (installs old Node 10, not Node 18)
+- Forgetting Development Tools (npm native dependencies fail)
+- Not testing internet access before assuming NAT works
+
+---
+
+#### Next Steps (Day 8)
+
+**Frontend instances:**
+
+- Deploy in public subnets (need direct internet access)
+- Install Nginx web server
+- Configure to proxy to ALB
+- Validate HTTP access from browser
+
+---

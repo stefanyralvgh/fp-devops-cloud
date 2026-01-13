@@ -1041,6 +1041,7 @@ docs/DAILY_LOG.md          # This document
 - Least privilege: Only allow minimum necessary access
 
 ---
+
 ## Day 6 - January 10, 2026
 
 **Status:** ✅ Complete | **Branch:** develop
@@ -1050,15 +1051,18 @@ docs/DAILY_LOG.md          # This document
 #### 1. SSH Key Pair Generation
 
 **Created RSA key pair for Bastion access:**
+
 ```bash
 ssh-keygen -t rsa -b 4096 -f movie-analyst-bastion-key -C "bastion@movie-analyst"
 ```
 
 **Files generated:**
+
 - `movie-analyst-bastion-key` (private key - stored locally, not in git)
 - `movie-analyst-bastion-key.pub` (public key - uploaded to AWS)
 
 **Security measures:**
+
 - Added `keys/` directory to `.gitignore`
 - Set restrictive permissions on private key (400)
 - Only public key stored in Terraform code
@@ -1068,6 +1072,7 @@ ssh-keygen -t rsa -b 4096 -f movie-analyst-bastion-key -C "bastion@movie-analyst
 #### 2. Compute Module Structure
 
 Created compute module for EC2 instance management:
+
 ```bash
 terraform/modules/compute/
 ├── main.tf       # Bastion instance, EIP, AMI data source
@@ -1080,6 +1085,7 @@ terraform/modules/compute/
 #### 3. Bastion Host Configuration
 
 **Instance specifications:**
+
 - **AMI:** Amazon Linux 2 (latest, auto-discovered via data source)
 - **Instance type:** t2.micro (free tier eligible)
 - **Subnet:** First public subnet (us-east-1a)
@@ -1090,6 +1096,7 @@ terraform/modules/compute/
 **Key features implemented:**
 
 **User Data script:**
+
 ```bash
 #!/bin/bash
 yum update -y
@@ -1099,6 +1106,7 @@ timedatectl set-timezone America/Bogota
 ```
 
 **Elastic IP assignment:**
+
 - Persistent public IP: `54.144.192.77`
 - Survives instance stop/start cycles
 - Enables consistent firewall whitelisting
@@ -1108,6 +1116,7 @@ timedatectl set-timezone America/Bogota
 #### 4. AWS Key Pair Resource
 
 Created Terraform resource to manage SSH key in AWS:
+
 ```hcl
 resource "aws_key_pair" "bastion" {
   key_name   = "${terraform.workspace}-bastion-key"
@@ -1116,6 +1125,7 @@ resource "aws_key_pair" "bastion" {
 ```
 
 **Why separate resource:**
+
 - Reusable across multiple instances
 - Centralized key management
 - Easy rotation (update file, apply)
@@ -1125,12 +1135,14 @@ resource "aws_key_pair" "bastion" {
 #### 5. Module Integration
 
 **Updated root main.tf:**
+
 - Called compute module with required parameters
 - Passed networking outputs (VPC ID, subnet IDs)
 - Passed security outputs (bastion SG ID)
 - Referenced key pair resource
 
 **Added helpful outputs:**
+
 ```hcl
 output "bastion_ssh_command" {
   value = "ssh -i keys/movie-analyst-bastion-key ec2-user@${module.compute.bastion_public_ip}"
@@ -1140,6 +1152,7 @@ output "bastion_ssh_command" {
 ---
 
 #### 6. Deployment
+
 ```bash
 terraform init       # Installed compute module
 terraform validate   # Validated configuration
@@ -1148,6 +1161,7 @@ terraform apply      # Created key pair, instance, EIP
 ```
 
 **Resources created:**
+
 1. `aws_key_pair.bastion` (qa-bastion-key)
 2. `aws_instance.bastion` (qa-bastion-host)
 3. `aws_eip.bastion` (54.144.192.77)
@@ -1159,6 +1173,7 @@ terraform apply      # Created key pair, instance, EIP
 **Challenge encountered:** Windows file permissions too permissive for SSH
 
 **Error:**
+
 ```
 WARNING: UNPROTECTED PRIVATE KEY FILE!
 Permissions for 'C:\Users\Stefany\.ssh\movie-analyst-bastion-key' are too open.
@@ -1166,6 +1181,7 @@ bad permissions
 ```
 
 **Solution:** Used Git Bash instead of PowerShell
+
 ```bash
 # Git Bash handles Linux-style permissions correctly
 chmod 400 ~/.ssh/movie-analyst-bastion-key
@@ -1173,6 +1189,7 @@ ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
 ```
 
 **Connection successful:**
+
 ```
    =====================================
    Movie Analyst Bastion Host
@@ -1182,6 +1199,7 @@ ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
 ```
 
 **Hostname explanation:**
+
 - `ec2-user`: Default user for Amazon Linux 2
 - `ip-10-0-1-25`: Hostname based on private IP (10.0.1.25)
 - Standard AWS behavior, no custom hostname needed
@@ -1191,11 +1209,13 @@ ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
 #### 8. Ansible Installation on Bastion
 
 **Installed Ansible using Amazon Linux Extras repository:**
+
 ```bash
 sudo amazon-linux-extras install ansible2 -y
 ```
 
 **Verification:**
+
 ```bash
 ansible --version
 # ansible 2.9.23
@@ -1204,6 +1224,7 @@ ansible --version
 ```
 
 **Additional tools installed:**
+
 ```bash
 # Python 3 and pip
 sudo yum install python3-pip -y
@@ -1227,17 +1248,20 @@ aws configure
 **Purpose:** Single, hardened entry point for SSH access to private infrastructure
 
 **Why needed:**
+
 - Backend instances are in private subnets (no public IPs)
 - Direct SSH from internet would be security risk
 - Bastion acts as "jump server" or "jump box"
 
 **Security benefits:**
+
 - Reduces attack surface (one SSH endpoint vs many)
 - Centralized access logging
 - Easier to audit (who accessed what, when)
 - Can implement additional controls (MFA, session recording)
 
 **Mental model (building analogy):**
+
 - **Without Bastion:** Every office has external door (security nightmare)
 - **With Bastion:** One secure maintenance entrance, guard verifies ID, escorts to office
 
@@ -1249,14 +1273,15 @@ aws configure
 
 **What I learned:**
 
-| Regular Public IP | Elastic IP |
-|-------------------|------------|
-| Random, AWS-assigned | Fixed, you choose |
-| Changes on stop/start | Persists across stop/start |
-| Free | Free while attached |
-| Released on termination | Persists until you delete |
+| Regular Public IP       | Elastic IP                 |
+| ----------------------- | -------------------------- |
+| Random, AWS-assigned    | Fixed, you choose          |
+| Changes on stop/start   | Persists across stop/start |
+| Free                    | Free while attached        |
+| Released on termination | Persists until you delete  |
 
 **Real-world scenario:**
+
 ```
 Day 1: Create Bastion → Gets IP 54.144.192.77
 Day 2: Stop instance to save money
@@ -1271,6 +1296,7 @@ Solution: Everything still works
 ```
 
 **Cost consideration:**
+
 - Elastic IP is FREE while attached to running instance
 - Costs $0.005/hour (~$3.60/month) if NOT attached
 - **Takeaway:** Always delete unused Elastic IPs
@@ -1284,16 +1310,18 @@ Solution: Everything still works
 **What I learned:**
 
 **Problem with hardcoded AMI IDs:**
+
 - AMI IDs differ by region (us-east-1 vs us-west-2)
 - AWS updates AMIs monthly (security patches)
 - Hardcoded ID might not exist in 6 months
 
 **Data source solution:**
+
 ```hcl
 data "aws_ami" "amazon_linux_2" {
   most_recent = true
   owners      = ["amazon"]
-  
+
   filter {
     name   = "name"
     values = ["amzn2-ami-hvm-*-x86_64-gp2"]
@@ -1302,6 +1330,7 @@ data "aws_ami" "amazon_linux_2" {
 ```
 
 **What this does:**
+
 - Queries AWS API for latest Amazon Linux 2 AMI
 - Always uses most recent version (security patches included)
 - Works in any region automatically
@@ -1316,11 +1345,13 @@ data "aws_ami" "amazon_linux_2" {
 **What I learned:**
 
 **Execution:**
+
 - Runs ONCE on first boot only
 - Runs as root (no need for sudo)
 - Executes before instance is fully operational
 
 **Common uses:**
+
 - Install packages
 - Configure services
 - Set hostname, timezone
@@ -1328,12 +1359,14 @@ data "aws_ami" "amazon_linux_2" {
 - Join domain/cluster
 
 **Important limitations:**
+
 - Runs only on FIRST boot (not on restart)
 - Limited to 16KB size
 - No easy way to see execution logs (must SSH and check `/var/log/cloud-init-output.log`)
 - Errors don't fail instance creation (instance starts even if script fails)
 
 **For this project:**
+
 ```bash
 # Update system (security patches)
 yum update -y
@@ -1359,13 +1392,14 @@ echo "Movie Analyst Bastion Host" > /etc/motd
 **What I learned:**
 
 **Key pair generation:**
+
 ```
 ssh-keygen creates:
 1. Private key (movie-analyst-bastion-key)
    - Keep secret
    - Never share
    - Never commit to git
-   
+
 2. Public key (movie-analyst-bastion-key.pub)
    - Can share freely
    - Upload to AWS
@@ -1373,6 +1407,7 @@ ssh-keygen creates:
 ```
 
 **Authentication flow:**
+
 ```
 1. AWS stores public key on Bastion
 2. You connect with private key
@@ -1382,12 +1417,14 @@ ssh-keygen creates:
 6. If valid → Access granted
 ```
 
-**Mental model:** 
+**Mental model:**
+
 - Public key = padlock (you can give to anyone)
 - Private key = unique key that opens that padlock
 - Server has padlock, only you have key
 
 **Security best practices:**
+
 - Private key permissions: 400 (read-only for owner)
 - Never email private keys
 - Use different keys for different environments
@@ -1402,20 +1439,24 @@ ssh-keygen creates:
 Windows NTFS permissions don't map cleanly to Unix permissions (400, 600, etc.)
 
 **SSH requirement:**
+
 - Private key must be readable ONLY by owner
 - No other users, no groups, no "Everyone"
 
 **Why PowerShell struggled:**
+
 - Windows has complex permission inheritance
 - Multiple security principals (User, SYSTEM, Administrators)
 - `icacls` commands didn't fully clean permissions
 
 **Solution that worked:**
+
 - Git Bash includes MinGW (minimal Unix environment)
 - `chmod 400` works correctly in Git Bash
 - Translates to appropriate Windows ACLs automatically
 
 **Alternative solutions:**
+
 1. **WSL (Windows Subsystem for Linux):** Full Linux environment
 2. **PuTTY:** GUI client with its own key format (.ppk)
 3. **ssh-keygen from PowerShell:** Creates key with correct permissions from start
@@ -1431,20 +1472,24 @@ Windows NTFS permissions don't map cleanly to Unix permissions (400, 600, etc.)
 **What I learned:**
 
 **AWS hostname behavior:**
+
 - Default hostname = `ip-{private-ip-with-dashes}`
 - Example: Private IP 10.0.1.25 → Hostname `ip-10-0-1-25`
 - This is standard AWS behavior
 
 **Tag vs Hostname:**
+
 - **Name tag:** `qa-bastion-host` (shows in AWS Console)
 - **OS hostname:** `ip-10-0-1-25` (shows in terminal)
 - These are different things
 
 **Do I need custom hostname?**
+
 - **No, for this project:** Default is fine
 - **Yes, for production:** Helps identify servers in logs
 
 **How to customize (if wanted):**
+
 ```bash
 sudo hostnamectl set-hostname bastion-qa.movie-analyst.local
 ```
@@ -1457,22 +1502,26 @@ sudo hostnamectl set-hostname bastion-qa.movie-analyst.local
 
 #### Challenge 1: SSH Private Key Permissions on Windows
 
-**Problem:** 
+**Problem:**
+
 ```
 WARNING: UNPROTECTED PRIVATE KEY FILE!
 Permissions too open
 ```
 
 **Root cause:**
+
 - Windows NTFS permissions don't map to Unix 400/600
 - PowerShell `icacls` left extra principals with access
 - SSH client (OpenSSH) enforces strict permission checks
 
 **Attempted solutions:**
+
 1. PowerShell `icacls` commands → Failed (permissions still too open)
 2. Manual permission removal → Failed (inheritance issues)
 
 **Working solution:**
+
 - Used Git Bash (includes MinGW Unix environment)
 - `chmod 400` works correctly in Git Bash
 - Properly restricts file to owner-only read access
@@ -1489,18 +1538,20 @@ Permissions too open
 
 **Security implications:**
 
-| Public Subnet | Private Subnet + Bastion |
-|---------------|--------------------------|
-| Every instance exposed | Only Bastion exposed |
-| Attack surface = N instances | Attack surface = 1 instance |
-| Each instance needs hardening | Harden one Bastion |
-| Hard to audit access | Centralized access point |
+| Public Subnet                 | Private Subnet + Bastion    |
+| ----------------------------- | --------------------------- |
+| Every instance exposed        | Only Bastion exposed        |
+| Attack surface = N instances  | Attack surface = 1 instance |
+| Each instance needs hardening | Harden one Bastion          |
+| Hard to audit access          | Centralized access point    |
 
 **Real-world analogy:**
+
 - **Public subnets for all:** Every employee has office with street entrance (chaos)
 - **Private + Bastion:** One secured entrance, guard escorts visitors (organized)
 
 **When Bastion NOT needed:**
+
 - VPN connection to VPC
 - AWS Systems Manager Session Manager (AWS-managed SSH)
 - Small, low-security environments
@@ -1514,6 +1565,7 @@ Permissions too open
 **Confusion:** What's the difference between `resource` and `data`?
 
 **What I learned:**
+
 ```hcl
 # RESOURCE: Terraform CREATES this
 resource "aws_instance" "bastion" {
@@ -1529,18 +1581,21 @@ data "aws_ami" "amazon_linux_2" {
 ```
 
 **Use cases for data sources:**
+
 - Lookup existing VPCs
 - Find latest AMI
 - Get current AWS region
 - Reference resources created outside Terraform
 
 **Mental model:**
+
 - Resource = Write operation (CREATE)
 - Data source = Read operation (QUERY)
 
 ---
 
 ### Commands Used
+
 ```bash
 # SSH key generation
 ssh-keygen -t rsa -b 4096 -f ~/.ssh/movie-analyst-bastion-key -C "bastion@movie-analyst"
@@ -1573,6 +1628,7 @@ aws configure
 ### Files Created/Modified
 
 **Created:**
+
 ```
 ~/.ssh/movie-analyst-bastion-key      # Private key (local only)
 ~/.ssh/movie-analyst-bastion-key.pub  # Public key
@@ -1584,6 +1640,7 @@ terraform/key_pair.tf                 # Key pair resource
 ```
 
 **Modified:**
+
 ```
 terraform/.gitignore              # Added keys/, *.pem
 terraform/main.tf                 # Added compute module call
@@ -1597,10 +1654,12 @@ terraform/outputs.tf              # Added bastion outputs
 **AWS Resources (3 new):**
 
 1. **SSH Key Pair:** `qa-bastion-key`
+
    - Public key stored in AWS
    - Used for EC2 instance authentication
 
 2. **EC2 Instance:** `qa-bastion-host`
+
    - AMI: Amazon Linux 2 (ami-xxxxxxxxx, auto-discovered)
    - Type: t2.micro
    - Subnet: qa-public-subnet-1 (10.0.1.0/24, us-east-1a)
@@ -1615,6 +1674,7 @@ terraform/outputs.tf              # Added bastion outputs
    - Persists across instance stop/start
 
 **Software installed on Bastion:**
+
 - Ansible 2.9.23
 - Python 3 + pip
 - Boto3 (AWS SDK)
@@ -1622,6 +1682,7 @@ terraform/outputs.tf              # Added bastion outputs
 - Git, wget, curl, vim
 
 **Cost impact:**
+
 - EC2 t2.micro: Free tier (750 hours/month)
 - Elastic IP (attached): Free
 - EBS 8GB: Free tier (30GB/month limit)
@@ -1645,6 +1706,7 @@ terraform/outputs.tf              # Added bastion outputs
 ### Next Steps (Day 7)
 
 **Backend EC2 Instances:**
+
 - [ ] Create backend instances in private subnets
 - [ ] Configure in both AZs (us-east-1a, us-east-1b)
 - [ ] Verify internet access via NAT Gateway
@@ -1658,6 +1720,7 @@ terraform/outputs.tf              # Added bastion outputs
 ### Study Notes for Presentation
 
 **Bastion concepts to remember:**
+
 - Jump host pattern for private subnet access
 - Elastic IP for persistent addressing
 - Data sources vs resources in Terraform
@@ -1682,7 +1745,793 @@ terraform/outputs.tf              # Added bastion outputs
    → AMI IDs differ by region, AWS updates monthly, data source always gets latest
 
 **Architecture understanding:**
+
 - Bastion = only public SSH endpoint
 - Private instances = SSH only from Bastion
 - Defense in depth: SG + Network isolation
 - Least privilege: Bastion can't access database directly
+
+## Day 7 - January 11, 2026
+
+**Status:** ✅ Complete | **Branch:** develop
+
+### What I Did
+
+#### 1. Backend Instances Configuration
+
+Extended compute module to support backend application servers in private subnets:
+
+```bash
+terraform/modules/compute/
+├── main.tf       # Added backend instances with IAM profile
+├── variables.tf  # Added backend-specific variables
+└── outputs.tf    # Added backend IPs and SSH commands
+```
+
+**Backend specifications:**
+
+- **Count:** 2 instances
+- **AMI:** Amazon Linux 2 (latest, shared data source with Bastion)
+- **Instance type:** t2.micro (free tier eligible)
+- **Subnets:** Private subnets (10.0.11.0/24, 10.0.12.0/24)
+- **Distribution:** Round-robin across availability zones
+- **Security Group:** backend-sg (port 3000 from ALB, SSH from Bastion)
+- **Storage:** 8GB GP3 encrypted root volume
+- **Monitoring:** Enabled (detailed CloudWatch metrics)
+
+---
+
+#### 2. IAM Role and Instance Profile
+
+Created IAM infrastructure for backend instances to interact with AWS services:
+
+**New file:** `terraform/iam.tf`
+
+**Resources created:**
+
+1. **IAM Role** (`qa-backend-role`): Allows EC2 to assume the role
+2. **CloudWatch Policy:** Write logs and metrics
+3. **SSM Parameter Store Policy:** Read application secrets
+4. **Instance Profile:** Attaches role to EC2 instances
+
+**Why this matters:**
+
+- Backend can write application logs to CloudWatch
+- Can read database credentials from Parameter Store (secure)
+- No hardcoded credentials needed
+- Follows AWS security best practices
+
+---
+
+#### 3. Multi-AZ Distribution Logic
+
+Implemented automatic distribution of instances across availability zones:
+
+```hcl
+subnet_id = var.private_subnet_ids[count.index % length(var.private_subnet_ids)]
+```
+
+**How it works:**
+
+- `count.index` = 0, 1, 2, 3...
+- `%` = modulo operator (remainder of division)
+- With 2 subnets:
+  - Instance 0: 0 % 2 = 0 → subnet[0] (us-east-1a)
+  - Instance 1: 1 % 2 = 1 → subnet[1] (us-east-1b)
+  - Instance 2: 2 % 2 = 0 → subnet[0] (us-east-1a)
+
+**Result:** Automatic high availability across AZs
+
+---
+
+#### 4. User Data for Backend Setup
+
+Configured automated initial setup via user data:
+
+```bash
+#!/bin/bash
+yum update -y
+yum groupinstall -y "Development Tools"
+yum install -y git wget curl vim
+timedatectl set-timezone America/Bogota
+mkdir -p /opt/movie-analyst
+```
+
+**Why Development Tools:**
+
+- Node.js native modules require gcc, make, python
+- Needed for compiling npm packages with C++ bindings
+- Examples: bcrypt, node-sass, sqlite3
+
+---
+
+#### 5. SSH Jump Host Configuration
+
+Configured SSH access through Bastion using ProxyJump:
+
+```hcl
+output "backend_ssh_commands" {
+  value = [
+    for ip in module.compute.backend_private_ips :
+    "ssh -J ec2-user@${module.compute.bastion_public_ip} ec2-user@${ip}"
+  ]
+}
+```
+
+**Access pattern:**
+
+```bash
+# Single command to jump through Bastion
+ssh -J ec2-user@54.144.192.77 ec2-user@10.0.11.5
+
+# Alternative: SSH Agent Forwarding
+ssh -A ec2-user@54.144.192.77
+ssh ec2-user@10.0.11.5
+```
+
+---
+
+#### 6. Deployment and Verification
+
+```bash
+terraform init
+terraform fmt -recursive
+terraform validate
+terraform plan       # Reviewed 7 new resources
+terraform apply      # Created IAM + 2 backend instances
+```
+
+**Resources created:**
+
+1. `aws_iam_role.backend`
+2. `aws_iam_role_policy.backend_cloudwatch`
+3. `aws_iam_role_policy.backend_ssm`
+4. `aws_iam_instance_profile.backend`
+5. `aws_instance.backend[0]` (us-east-1a)
+6. `aws_instance.backend[1]` (us-east-1b)
+
+---
+
+#### 7. NAT Gateway Verification
+
+**Tested outbound internet connectivity from private subnets:**
+
+Connected to backend instance via Bastion:
+
+```bash
+# DNS resolution test
+nslookup google.com
+# ✅ Success: 8.8.8.8 resolved
+
+# HTTP connectivity test
+curl -I https://www.google.com
+# ✅ Success: HTTP 200 OK
+
+# Verify public IP (should be NAT Gateway IP, not instance IP)
+curl https://ifconfig.me
+# ✅ Returns NAT Gateway Elastic IP (not backend private IP)
+```
+
+**Confirmation:** NAT Gateway correctly provides outbound internet access to private subnet instances
+
+---
+
+#### 8. IAM Role Verification
+
+**Tested IAM instance profile from backend:**
+
+```bash
+# Check IAM metadata
+curl http://169.254.169.254/latest/meta-data/iam/info
+# ✅ Shows instance profile ARN
+
+# Verify AWS API access
+aws sts get-caller-identity
+# ✅ Shows assumed role ARN: arn:aws:sts::...:assumed-role/qa-backend-role/i-xxx
+```
+
+**Confirmation:** Backend instances can authenticate to AWS services without credentials
+
+---
+
+### Key Learnings (Backend & Private Subnet Concepts)
+
+#### 1. Private Subnets and Internet Access
+
+**Initial confusion:** If instances are in private subnets with no public IPs, how do they access the internet?
+
+**What I learned:**
+
+**The NAT Gateway flow:**
+
+```
+Backend (10.0.11.5) wants npm install
+  ↓
+Route Table: "0.0.0.0/0 → NAT Gateway"
+  ↓
+NAT Gateway (in public subnet)
+  ↓
+Internet Gateway
+  ↓
+Internet (npmjs.com)
+  ↓
+Response follows same path back
+```
+
+**Key insight:** NAT is UNIDIRECTIONAL
+
+- ✅ Outbound: Backend → Internet (initiated by backend)
+- ❌ Inbound: Internet → Backend (blocked, no public IP)
+
+**Mental model (building analogy):**
+
+- Backend = Employee in office without windows
+- NAT Gateway = Receptionist who makes calls for employees
+- Employee can ask receptionist to call outside
+- Outside callers CANNOT reach employee directly
+
+---
+
+#### 2. Count vs For_Each in Terraform
+
+**Question:** Why use `count` instead of `for_each` for creating multiple instances?
+
+**What I learned:**
+
+**Count is appropriate when:**
+
+- Number of resources is fixed (2 backends for QA, 2 for PROD)
+- Resources are homogeneous (all identical configuration)
+- Not frequently adding/removing resources
+
+**For_each would be better when:**
+
+- Dynamic list of resources that changes frequently
+- Need to identify resources by name instead of index
+- Resources have unique configurations
+
+**For this project:** Count is simpler and appropriate because:
+
+- Fixed architecture (always 2 backends)
+- Identical configuration for all backends
+- Not scaling dynamically (would use Auto Scaling Group for that)
+
+**Code pattern:**
+
+```hcl
+resource "aws_instance" "backend" {
+  count = 2  # Creates backend[0] and backend[1]
+
+  # Distribute across subnets
+  subnet_id = var.private_subnet_ids[count.index % 2]
+}
+```
+
+---
+
+#### 3. IAM Roles vs IAM Users
+
+**Confusion:** What's the difference between IAM Role and IAM User?
+
+**What I learned:**
+
+| IAM User                            | IAM Role                              |
+| ----------------------------------- | ------------------------------------- |
+| Permanent identity                  | Temporary identity                    |
+| Long-term credentials (access keys) | Short-term credentials (auto-rotated) |
+| For humans                          | For services (EC2, Lambda, etc.)      |
+| You manage credentials              | AWS manages credentials               |
+
+**Real-world scenario WITHOUT IAM Role:**
+
+```bash
+# Bad practice: Hardcoded credentials
+export AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+export AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+```
+
+**Problems:**
+
+- Credentials in code/environment variables
+- If compromised, attacker has permanent access
+- Must manually rotate
+- Risk of committing to git
+
+**Real-world scenario WITH IAM Role:**
+
+```bash
+# Good practice: Instance profile
+aws logs put-log-events
+
+# Credentials automatically provided by AWS:
+# - Auto-rotated every 6 hours
+# - Never appear in code
+# - Tied to instance (can't be extracted)
+# - Automatically expire when instance terminates
+```
+
+---
+
+#### 4. Instance Profile vs IAM Role
+
+**Confusion:** What's the difference? Why do we need both?
+
+**What I learned:**
+
+**IAM Role:**
+
+- Defines WHAT permissions you have
+- Contains policies (actions allowed)
+- Abstract concept
+
+**Instance Profile:**
+
+- HOW EC2 instances use a role
+- Container that holds a role
+- Physical attachment mechanism
+
+**Analogy:**
+
+- **IAM Role** = Your job title and responsibilities (Software Engineer)
+- **Instance Profile** = Your employee badge that gives you access
+- **IAM Policies** = Specific permissions (access building, use laptop, etc.)
+
+**In Terraform:**
+
+```hcl
+# Create the role (what permissions)
+resource "aws_iam_role" "backend" {
+  # ... policies attached here
+}
+
+# Create the profile (how EC2 uses it)
+resource "aws_iam_instance_profile" "backend" {
+  role = aws_iam_role.backend.name
+}
+
+# Attach to instance
+resource "aws_instance" "backend" {
+  iam_instance_profile = aws_iam_instance_profile.backend.name
+}
+```
+
+---
+
+#### 5. User Data Execution and Limitations
+
+**What I learned:**
+
+**User Data characteristics:**
+
+- Executes ONCE on first boot only
+- Runs as root user (no sudo needed)
+- Executes BEFORE instance is "ready"
+- Limited to 16KB size
+- Errors don't prevent instance from starting
+
+**Execution order:**
+
+```
+1. Instance boots
+2. User data script runs
+3. Instance becomes "running" (ready for SSH)
+4. You can connect
+```
+
+**How to check if user data ran:**
+
+```bash
+# SSH to instance
+ssh ec2-user@10.0.11.5
+
+# Check user data logs
+sudo cat /var/log/cloud-init-output.log
+
+# Check if packages installed
+which git
+# Should show: /usr/bin/git
+```
+
+**User Data vs Ansible:**
+
+| Use Case                     | Tool      |
+| ---------------------------- | --------- |
+| Basic system setup           | User Data |
+| Install base packages        | User Data |
+| System configuration         | User Data |
+| Application deployment       | Ansible   |
+| Configuration management     | Ansible   |
+| Complex multi-step processes | Ansible   |
+
+**For this project:**
+
+- User Data: Install system tools, create directories
+- Ansible (Days 11-14): Deploy Node.js app, configure services
+
+---
+
+#### 6. SSH Jump Host (ProxyJump)
+
+**Confusion:** How to SSH to instances in private subnets?
+
+**What I learned:**
+
+**Traditional method (two steps):**
+
+```bash
+# Step 1: SSH to Bastion
+ssh ec2-user@54.144.192.77
+
+# Step 2: From Bastion, SSH to Backend
+ssh ec2-user@10.0.11.5
+```
+
+**Modern method (one command):**
+
+```bash
+# ProxyJump (-J flag)
+ssh -J ec2-user@54.144.192.77 ec2-user@10.0.11.5
+```
+
+**How it works:**
+
+1. SSH client connects to Bastion (54.144.192.77)
+2. From Bastion, connects to Backend (10.0.11.5)
+3. Creates encrypted tunnel through Bastion
+4. You interact directly with Backend
+
+**SSH Agent Forwarding:**
+
+```bash
+# Add key to agent
+ssh-add ~/.ssh/movie-analyst-bastion-key
+
+# Connect with forwarding (-A flag)
+ssh -A ec2-user@54.144.192.77
+
+# Now inside Bastion, can SSH to Backend without copying key
+ssh ec2-user@10.0.11.5
+```
+
+**Security consideration:**
+
+- ProxyJump: More secure (key never leaves local machine)
+- Copying key to Bastion: Less secure (key on Bastion is attack vector)
+
+---
+
+#### 7. CloudWatch Detailed Monitoring
+
+**Question:** What's the difference between basic and detailed monitoring?
+
+**What I learned:**
+
+| Basic Monitoring      | Detailed Monitoring       |
+| --------------------- | ------------------------- |
+| Free                  | $2.10/instance/month      |
+| 5-minute intervals    | 1-minute intervals        |
+| Standard metrics only | Standard + custom metrics |
+
+**Standard metrics (both):**
+
+- CPU utilization
+- Network in/out
+- Disk read/write
+
+**Why detailed matters:**
+
+- Faster incident detection (1 min vs 5 min)
+- More granular troubleshooting
+- Better for production systems
+
+**For this project:**
+
+```hcl
+monitoring = true  # Enabled for learning purposes
+```
+
+**In production:** Always enable for critical instances
+
+---
+
+#### 8. Development Tools Package Group
+
+**Question:** Why install "Development Tools"?
+
+**What I learned:**
+
+**What gets installed:**
+
+```bash
+yum groupinstall -y "Development Tools"
+```
+
+Installs:
+
+- gcc (C compiler)
+- g++ (C++ compiler)
+- make (build automation)
+- python (for node-gyp)
+- git
+- autoconf, automake
+
+**Why needed for Node.js:**
+
+- Many npm packages have native (C/C++) components
+- Examples: bcrypt, node-sass, sqlite3, sharp
+- These need to be compiled during `npm install`
+- Without gcc/make, `npm install` fails
+
+**Production consideration:**
+
+- For production: Use pre-built binaries or Alpine packages
+- Or build in Docker with multi-stage builds
+- Reduces attack surface (don't need compiler in production)
+
+**For this project:**
+
+- Acceptable for learning environment
+- Will use Ansible to deploy app (needs compilation)
+
+---
+
+### Challenges and Solutions
+
+#### Challenge 1: Understanding Private Subnet Internet Access
+
+**Problem:** Initially confused about how private subnets access internet without public IPs
+
+**Solution:**
+
+- NAT Gateway provides outbound-only internet access
+- Route table directs 0.0.0.0/0 traffic to NAT
+- NAT translates private IP to its public Elastic IP
+- Response traffic automatically routed back
+
+**Verification method:**
+
+```bash
+# On backend instance
+curl https://ifconfig.me
+
+# Returns NAT Gateway's public IP, not instance's private IP
+# Confirms traffic is routed through NAT
+```
+
+---
+
+#### Challenge 2: SSH Key Management for Jump Host
+
+**Problem:** How to SSH from Bastion to Backend without exposing private key?
+
+**Solutions evaluated:**
+
+| Method               | Security | Complexity | Selected    |
+| -------------------- | -------- | ---------- | ----------- |
+| Copy key to Bastion  | Low      | Low        | ❌ No       |
+| SSH Agent Forwarding | High     | Medium     | ✅ Yes      |
+| AWS Systems Manager  | Highest  | High       | ❌ Overkill |
+
+**Implementation:**
+
+```bash
+# Add key to local SSH agent
+ssh-add ~/.ssh/movie-analyst-bastion-key
+
+# Connect with agent forwarding
+ssh -A ec2-user@54.144.192.77
+
+# Can now SSH to backend without key on Bastion
+```
+
+---
+
+#### Challenge 3: IAM Role Creation Order
+
+**Problem:** Initially tried to reference IAM instance profile before creating it
+
+**What I learned:**
+
+**Correct order in Terraform:**
+
+1. Create IAM role (`aws_iam_role.backend`)
+2. Attach policies (`aws_iam_role_policy.*`)
+3. Create instance profile (`aws_iam_instance_profile.backend`)
+4. Reference in EC2 instance (`iam_instance_profile = ...`)
+
+**Terraform handles dependencies automatically** via references
+
+---
+
+#### Challenge 4: Module Structure - Single vs Multiple Modules
+
+**Initial approach:** Tried to call compute module twice (bastion + backend)
+
+**Problem:**
+
+```hcl
+module "compute" { }  # First call
+module "compute" { }  # Second call - ERROR: duplicate
+```
+
+**Solution:** Single module handles both bastion and backend
+
+**Why this works better:**
+
+- Shared resources (AMI data source, key pair)
+- Single source of truth
+- Easier dependency management
+- Cleaner code
+
+---
+
+### Commands Used
+
+```bash
+# Module updates
+cd terraform/modules/compute
+# Updated variables.tf, main.tf, outputs.tf
+
+# IAM creation
+cd ~/proyecto-final-devops/terraform
+touch iam.tf
+# Created IAM role, policies, instance profile
+
+# Terraform workflow
+terraform fmt -recursive
+terraform validate
+terraform plan       # Review 7 new resources
+terraform apply      # Create IAM + backend instances
+
+# SSH verification
+terraform output backend_ssh_commands
+ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@$(terraform output -raw bastion_public_ip)
+ssh ec2-user@10.0.11.5
+
+# NAT Gateway verification (on backend)
+nslookup google.com
+curl -I https://www.google.com
+curl https://ifconfig.me
+
+# IAM verification (on backend)
+curl http://169.254.169.254/latest/meta-data/iam/info
+aws sts get-caller-identity
+```
+
+---
+
+### Files Created/Modified
+
+**Created:**
+
+```
+terraform/iam.tf                      # IAM role, policies, instance profile
+```
+
+**Modified:**
+
+```
+terraform/main.tf                     # Added backend configuration to compute module
+terraform/outputs.tf                  # Added backend outputs
+terraform/modules/compute/main.tf     # Added backend instances
+terraform/modules/compute/variables.tf # Added backend variables
+terraform/modules/compute/outputs.tf   # Added backend outputs
+```
+
+---
+
+### Infrastructure Created
+
+**AWS Resources (7 new):**
+
+1. **IAM Role:** `qa-backend-role`
+
+   - Allows EC2 service to assume role
+   - Trust policy for ec2.amazonaws.com
+
+2. **IAM Policy:** CloudWatch Logs
+
+   - PutMetricData, CreateLogGroup, CreateLogStream, PutLogEvents
+   - Allows backend to write application logs
+
+3. **IAM Policy:** SSM Parameter Store
+
+   - GetParameter, GetParameters, GetParametersByPath
+   - Allows reading secrets (DB credentials, API keys)
+
+4. **IAM Instance Profile:** `qa-backend-profile`
+
+   - Attaches role to EC2 instances
+
+5. **EC2 Instance:** `qa-backend-1`
+
+   - Type: t2.micro
+   - Subnet: qa-private-subnet-1 (10.0.11.0/24, us-east-1a)
+   - Private IP: 10.0.11.x
+   - Security Group: qa-backend-sg
+   - IAM Profile: qa-backend-profile
+
+6. **EC2 Instance:** `qa-backend-2`
+   - Type: t2.micro
+   - Subnet: qa-private-subnet-2 (10.0.12.0/24, us-east-1b)
+   - Private IP: 10.0.12.x
+   - Security Group: qa-backend-sg
+   - IAM Profile: qa-backend-profile
+
+**Total infrastructure now:**
+
+- Networking: 22 resources
+- Security: 5 resources
+- Compute: 3 resources (Bastion)
+- IAM: 4 resources
+- Compute Backend: 2 resources
+- **Total: 36 resources**
+
+**Cost impact:**
+
+- IAM resources: Free (always)
+- EC2 t2.micro (2 instances): Free tier (750 hours/month shared)
+- EBS volumes (16GB total): Free tier (30GB limit)
+- **Additional cost: $0/month** (within free tier)
+
+---
+
+### Key Decisions Made
+
+1. **Count over For_Each:** Simpler for fixed number of identical instances
+2. **Round-robin AZ distribution:** Automatic HA without complex logic
+3. **IAM Instance Profile:** Security best practice, no hardcoded credentials
+4. **SSH Agent Forwarding:** Secure key management for jump host access
+5. **Development Tools in user data:** Necessary for npm native module compilation
+6. **Single compute module:** Handles both bastion and backend (simpler)
+7. **Detailed monitoring enabled:** Worth the learning value
+
+---
+
+### Next Steps (Day 8)
+
+**Frontend EC2 Instances:**
+
+- [ ] Create frontend instances in public subnets
+- [ ] Configure in both AZs (us-east-1a, us-east-1b)
+- [ ] Verify HTTP access
+- [ ] Test SSH access via Bastion
+- [ ] User data for web server preparation
+
+**Estimated time:** 2 hours
+
+---
+
+### Study Notes for Presentation
+
+**Backend concepts to remember:**
+
+- Private subnets = no public IPs, NAT for outbound only
+- Count creates indexed resources: backend[0], backend[1]
+- IAM role = what permissions, Instance profile = how EC2 uses it
+- SSH ProxyJump = one command to access private instance
+- User data = first boot only, Ansible = ongoing configuration
+
+**Questions evaluator might ask:**
+
+1. **"How do private instances access the internet?"**
+   → NAT Gateway in public subnet provides outbound-only access via route table
+
+2. **"Why use IAM role instead of access keys?"**
+   → Auto-rotated temporary credentials, no hardcoding, better security, AWS manages lifecycle
+
+3. **"What if one AZ fails?"**
+   → Second backend instance in different AZ continues serving traffic (HA)
+
+4. **"How do you deploy application to private instances?"**
+   → SSH through Bastion, or use Systems Manager Session Manager, or Ansible from Bastion
+
+5. **"Why Development Tools in user data?"**
+   → Node.js native modules need C++ compiler for npm install, required for packages like bcrypt
+
+**Architecture understanding:**
+
+- Internet → IGW → ALB (public) → Backend (private) → RDS (private)
+- SSH: Local → Bastion (public) → Backend (private)
+- Backend → NAT → IGW → Internet (outbound only)
+- IAM role enables AWS API access without credentials
