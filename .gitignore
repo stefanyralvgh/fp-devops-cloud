@@ -6,6 +6,7 @@
 *.tfvars
 *.tfplan
 tfplan*
+terraform.tfvars
 crash.log
 outputs.txt
 
