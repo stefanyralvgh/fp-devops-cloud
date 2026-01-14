@@ -72,3 +72,25 @@ module "compute" {
   enable_detailed_monitoring = terraform.workspace == "prod"
 
 }
+
+
+# DATABASE MODULE
+
+module "database" {
+  source = "./modules/database"
+
+  environment           = terraform.workspace
+  vpc_id                = module.networking.vpc_id
+  database_subnet_ids   = module.networking.database_subnet_ids
+  rds_security_group_id = module.security.rds_sg_id
+
+  # Database configuration
+  db_name     = "movieanalyst"
+  db_username = "admin"
+
+
+  # Instance sizing
+  allocated_storage = 20
+  instance_class    = "db.t3.micro"
+  engine_version    = "8.0"
+}

@@ -70,3 +70,7 @@ variable "single_nat_gateway" {
   type        = bool
   default     = true
 }
+
+
+
+

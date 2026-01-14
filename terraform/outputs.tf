@@ -66,6 +66,7 @@ output "rds_sg_id" {
 
 
 # COMPUTE OUTPUTS (BASTION)
+# ============================================
 
 output "bastion_public_ip" {
   description = "Public IP of Bastion Host"
@@ -79,6 +80,7 @@ output "bastion_ssh_command" {
 
 
 # COMPUTE OUTPUTS (BACKEND)
+# ============================================
 
 output "backend_private_ips" {
   description = "Private IPs of Backend instances"
@@ -100,6 +102,7 @@ output "backend_availability_zones" {
 
 
 # COMPUTE OUTPUTS (FRONTEND)
+# ============================================
 
 output "frontend_public_ips" {
   description = "Public IPs of frontend instances"
@@ -140,4 +143,28 @@ output "quick_access_guide" {
   
   ═══════════════════════════════════════════════════════════
   EOT
+}
+
+# DATABASE OUTPUTS
+# ============================================
+
+output "db_endpoint" {
+  description = "RDS instance endpoint"
+  value       = module.database.db_instance_endpoint
+}
+
+output "db_address" {
+  description = "RDS instance address"
+  value       = module.database.db_instance_address
+}
+
+output "db_name" {
+  description = "Database name"
+  value       = module.database.db_instance_name
+}
+
+output "db_connection_string" {
+  description = "Database connection string (without password)"
+  value       = module.database.db_connection_string
+  sensitive   = true
 }
