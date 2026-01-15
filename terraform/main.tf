@@ -94,3 +94,32 @@ module "database" {
   instance_class    = "db.t3.micro"
   engine_version    = "8.0"
 }
+
+
+
+# LOAD BALANCER MODULE
+module "alb" {
+  source = "./modules/loadbalancer"
+
+  name = "${terraform.workspace}-${var.project_name}-alb"
+
+  vpc_id            = module.networking.vpc_id
+  public_subnet_ids = module.networking.public_subnet_ids
+  alb_sg_id         = module.security.alb_sg_id
+
+
+  frontend_instance_ids = module.compute.frontend_instance_ids
+
+  target_group_name = "${terraform.workspace}-frontend-tg"
+
+  enable_deletion_protection = terraform.workspace == "prod"
+
+  tags = merge(
+    var.common_tags,
+    {
+      Environment = terraform.workspace
+      Name        = "${terraform.workspace}-${var.project_name}-alb"
+    }
+  )
+}
+
