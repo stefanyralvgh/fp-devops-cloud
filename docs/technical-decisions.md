@@ -2074,3 +2074,493 @@ resource "aws_db_subnet_group" "this" {
 - Application health checks (database connectivity validation)
 
 ---
+
+# Technical Decisions - Day 10: Application Load Balancer
+
+**Project:** Cloud Migration with Terraform & Ansible  
+**Date:** January 11, 2026  
+**Module:** Load Balancer (ALB)
+
+---
+
+## Load Balancer Architecture
+
+### Decision: Application Load Balancer for HTTP Traffic Distribution
+
+**Context:**  
+The Movie Analyst application has multiple backend instances (2x) deployed across availability zones. Users need to access the application through a single endpoint, with automatic traffic distribution and health-based routing.
+
+**Decision:**  
+Implement AWS Application Load Balancer (ALB) in public subnets with target group routing to backend instances.
+
+**Alternatives Considered:**
+
+| Option                        | Cost       | Features                         | Use Case             | Selected |
+| ----------------------------- | ---------- | -------------------------------- | -------------------- | -------- |
+| **Application Load Balancer** | ~$16/month | Layer 7, path routing, WebSocket | Web applications     | ✅ Yes   |
+| Classic Load Balancer         | ~$15/month | Layer 4, basic                   | Legacy apps          | ❌ No    |
+| Network Load Balancer         | ~$16/month | Layer 4, ultra-low latency       | TCP/UDP traffic      | ❌ No    |
+| No Load Balancer              | $0         | None                             | Single instance only | ❌ No    |
+
+**Justification:**
+
+**Application Load Balancer advantages:**
+
+- **Layer 7 routing:** HTTP/HTTPS aware (can route based on URL paths)
+- **Health checks:** Automatic removal of unhealthy instances from pool
+- **Cross-zone load balancing:** Distributes traffic across AZs evenly
+- **WebSocket support:** Required for real-time features (if needed)
+- **Free SSL/TLS termination:** HTTPS support without extra cost
+- **Integration with Auto Scaling:** Supports future scaling needs
+
+**Why not Classic Load Balancer:**
+
+- Deprecated by AWS (legacy technology)
+- Limited Layer 7 features
+- No path-based routing
+- Being phased out
+
+**Why not Network Load Balancer:**
+
+- Layer 4 only (TCP/UDP)
+- No HTTP-specific features
+- Overkill for web application
+- Better for non-HTTP workloads (databases, game servers)
+
+**Real-world scenario:**
+
+```
+User request → ALB (public subnet)
+  ↓
+ALB health check: Backend-1 ✅ healthy, Backend-2 ❌ unhealthy
+  ↓
+Route to: Backend-1 only
+  ↓
+Backend-1 processes request → Returns response
+```
+
+---
+
+## Module Strategy: Terraform Registry vs Custom Module
+
+### Decision: Use Terraform Registry Module with Custom Wrapper
+
+**Context:**  
+Two approaches existed for implementing ALB:
+
+1. Write custom Terraform code (200+ lines)
+2. Use community module from Terraform Registry
+
+**Decision:**  
+Use `terraform-aws-modules/alb/aws` from Terraform Registry, wrapped in custom `modules/loadbalancer/` for consistency.
+
+**Implementation:**
+
+```
+terraform/
+├── modules/
+│   └── loadbalancer/
+│       ├── main.tf         # Calls registry module
+│       ├── variables.tf    # Project-specific variables
+│       └── outputs.tf      # Processed outputs
+└── main.tf                 # Invokes loadbalancer module
+```
+
+**Justification:**
+
+**Benefits of Registry module:**
+
+- ✅ **Battle-tested:** Used by thousands of projects
+- ✅ **Best practices:** Maintained by AWS experts
+- ✅ **Reduced code:** ~20 lines vs ~200 lines custom
+- ✅ **Automatic updates:** Bug fixes and improvements
+- ✅ **Well-documented:** Extensive examples
+
+**Benefits of custom wrapper:**
+
+- ✅ **Consistency:** Matches project structure (networking, security, compute modules)
+- ✅ **Abstraction:** Hides registry module complexity
+- ✅ **Project-specific logic:** Environment-aware configurations
+- ✅ **Future extensibility:** Easy to add custom logic if needed
+
+**Comparison with Database module:**
+
+| Aspect                | Database Module                  | Load Balancer Module             |
+| --------------------- | -------------------------------- | -------------------------------- |
+| **Registry Module**   | ✅ terraform-aws-modules/rds/aws | ✅ terraform-aws-modules/alb/aws |
+| **Custom Wrapper**    | ✅ Yes (password generation)     | ✅ Yes (consistency)             |
+| **Additional Logic**  | ✅ Random password, snapshots    | ❌ Minimal                       |
+| **Processed Outputs** | ✅ Connection strings            | ❌ Direct passthrough            |
+
+**Trade-offs accepted:**
+
+- Dependency on external module (mitigated by version pinning)
+- Less control over internal implementation (acceptable for standard use case)
+- One extra abstraction layer (minor, improves consistency)
+
+---
+
+## Module Version Selection
+
+### Decision: Downgrade from v9.0 to v8.0 due to Critical Bug
+
+**Context:**  
+Initial implementation used `version = "~> 9.0"` (latest version). During `terraform plan`, encountered error:
+
+```
+Error: Missing required argument
+The argument "target_id" is required, but no definition was found.
+```
+
+**Root cause analysis:**
+
+1. **Configuration matched official documentation** (not user error)
+2. **Error occurred internally** (`.terraform/modules/alb/...`)
+3. **Bug in module version 9.x:** Known issue with `target_groups` and `additional_target_group_attachments`
+4. **Community reports:** Multiple users experienced same issue
+
+**Decision:**  
+Downgrade to version 8.x which is stable and well-tested.
+
+**Implementation:**
+
+```hcl
+module "alb" {
+  source  = "terraform-aws-modules/alb/aws"
+  version = "~> 8.0"  # ✅ Stable version, bug-free
+  # ...
+}
+```
+
+**Justification:**
+
+**Why version pinning matters:**
+
+- ✅ **Stability:** v8.x is production-proven
+- ✅ **Predictability:** No surprise breaking changes
+- ✅ **Reproducibility:** Same version across environments
+- ✅ **Team alignment:** Everyone uses identical provider/module versions
+
+**Lessons learned:**
+
+1. **Latest ≠ Best:** Newest versions can have regressions
+2. **Pin versions explicitly:** Always use `~>` or `=` constraints
+3. **Check changelogs:** Review release notes before upgrading
+4. **Community validation:** Wait for community adoption before using new versions
+5. **Error investigation:** Internal module errors suggest version issue, not configuration issue
+
+**Version constraint strategy:**
+
+| Constraint           | Meaning       | Use Case            | Selected      |
+| -------------------- | ------------- | ------------------- | ------------- |
+| `version = "8.7.0"`  | Exact version | Critical production | ❌ Too strict |
+| `version = "~> 8.0"` | 8.x only      | Stable with patches | ✅ Yes        |
+| `version = ">= 8.0"` | 8.x and above | Risky               | ❌ No         |
+| No constraint        | Any version   | Never use           | ❌ No         |
+
+**Why `~> 8.0`:**
+
+- Allows: 8.1, 8.2, 8.7 (patch updates)
+- Blocks: 9.0, 10.0 (major version changes)
+- Balance: Stability + security patches
+
+---
+
+## Target Group Configuration
+
+### Decision: Health Check on `/health` Endpoint
+
+**Context:**  
+ALB needs to determine which backend instances are healthy and can receive traffic.
+
+**Decision:**  
+Configure health checks to query `/health` endpoint on port 3000.
+
+**Implementation:**
+
+```hcl
+health_check = {
+  enabled             = true
+  interval            = 30
+  path                = "/health"
+  port                = "traffic-port"  # Same as target (3000)
+  healthy_threshold   = 2
+  unhealthy_threshold = 2
+  timeout             = 5
+  protocol            = "HTTP"
+  matcher             = "200-299"
+}
+```
+
+**Justification:**
+
+**Health check parameters explained:**
+
+| Parameter               | Value      | Meaning                       |
+| ----------------------- | ---------- | ----------------------------- |
+| **interval**            | 30 seconds | Check every 30s               |
+| **path**                | `/health`  | GET request to this endpoint  |
+| **healthy_threshold**   | 2          | 2 successful checks → healthy |
+| **unhealthy_threshold** | 2          | 2 failed checks → unhealthy   |
+| **timeout**             | 5 seconds  | Max response time             |
+| **matcher**             | 200-299    | HTTP success codes            |
+
+**Why `/health` endpoint:**
+
+- ✅ Standard REST API convention
+- ✅ Lightweight (no DB query needed)
+- ✅ Fast response (< 100ms typical)
+- ✅ Can check internal dependencies if needed
+
+**Example health check flow:**
+
+```
+ALB: GET http://10.0.11.25:3000/health
+Backend-1: HTTP 200 OK {"status": "healthy"}
+ALB: ✅ Healthy (1/2)
+
+[30 seconds later]
+
+ALB: GET http://10.0.11.25:3000/health
+Backend-1: HTTP 200 OK {"status": "healthy"}
+ALB: ✅ Healthy (2/2) → Instance marked healthy
+
+[30 seconds later]
+
+ALB: GET http://10.0.11.25:3000/health
+Backend-1: [timeout after 5 seconds]
+ALB: ❌ Unhealthy (1/2)
+
+[30 seconds later]
+
+ALB: GET http://10.0.11.25:3000/health
+Backend-1: [timeout after 5 seconds]
+ALB: ❌ Unhealthy (2/2) → Instance removed from pool
+```
+
+**Alternative health check paths considered:**
+
+| Path          | Pros                    | Cons                         | Selected |
+| ------------- | ----------------------- | ---------------------------- | -------- |
+| **`/health`** | Standard, simple        | Requires implementation      | ✅ Yes   |
+| `/`           | No code needed          | False positives              | ❌ No    |
+| `/api/status` | Can check DB connection | Slower, couples health to DB | ❌ No    |
+
+**Deregistration delay:**
+
+```hcl
+deregistration_delay = 10  # seconds
+```
+
+**Why 10 seconds:**
+
+- Default is 300 seconds (too long for development)
+- 10 seconds allows in-flight requests to complete
+- Fast failover during testing
+
+---
+
+## Deletion Protection Strategy
+
+### Decision: Workspace-Aware Deletion Protection
+
+**Context:**  
+Accidental ALB deletion in production would cause complete application outage. However, QA environment requires frequent iteration and testing.
+
+**Decision:**  
+Enable deletion protection only in production workspace.
+
+**Implementation:**
+
+```hcl
+enable_deletion_protection = terraform.workspace == "prod" ? true : false
+```
+
+**Result:**
+
+| Workspace | Protection | Behavior                                        |
+| --------- | ---------- | ----------------------------------------------- |
+| **qa**    | `false`    | Can be destroyed with `terraform destroy`       |
+| **prod**  | `true`     | Cannot be destroyed without manual intervention |
+
+**Justification:**
+
+**Production protection:**
+
+- ✅ Prevents accidental `terraform destroy`
+- ✅ Requires explicit AWS Console action to disable protection
+- ✅ Multi-step process reduces human error
+- ✅ Audit trail in CloudTrail
+
+**QA flexibility:**
+
+- ✅ Rapid iteration (destroy/apply cycles)
+- ✅ Testing disaster recovery procedures
+- ✅ Cost optimization (can destroy overnight)
+- ✅ No bureaucracy for experimentation
+
+**To destroy protected ALB (production):**
+
+```bash
+# 1. Disable protection via AWS Console
+# 2. Or update Terraform:
+terraform workspace select prod
+# Temporarily change: enable_deletion_protection = false
+terraform apply
+# Then destroy:
+terraform destroy
+```
+
+---
+
+## Security Group Integration
+
+### Decision: Reuse Existing Security Group from Security Module
+
+**Context:**  
+The Terraform Registry ALB module can either:
+
+1. Create its own security group (default)
+2. Use an existing security group
+
+**Decision:**  
+Use security group created by `modules/security/` to maintain centralized security management.
+
+**Implementation:**
+
+```hcl
+# ❌ Don't let ALB module create SG
+# security_group_ingress_rules = { ... }
+# security_group_egress_rules = { ... }
+
+# ✅ Use our existing SG
+security_groups = [var.alb_sg_id]  # From security module
+```
+
+**Justification:**
+
+**Benefits of centralized security groups:**
+
+| Aspect                     | With Reuse                    | Without Reuse              |
+| -------------------------- | ----------------------------- | -------------------------- |
+| **Single source of truth** | ✅ All SGs in security module | ❌ Split across modules    |
+| **Rule changes**           | ✅ One place to update        | ❌ Multiple places         |
+| **Audit**                  | ✅ Easy to review all rules   | ❌ Scattered configuration |
+| **Dependencies**           | ✅ Clear module dependencies  | ❌ Implicit dependencies   |
+
+**Security group rules (defined in security module):**
+
+```hcl
+# Ingress
+HTTP (80)   ← 0.0.0.0/0 (internet)
+HTTPS (443) ← 0.0.0.0/0 (internet)
+
+# Egress
+All traffic → 0.0.0.0/0 (to backend instances)
+```
+
+**Module dependency flow:**
+
+```
+main.tf
+  ↓
+security module → creates alb_sg
+  ↓
+loadbalancer module → uses alb_sg
+```
+
+---
+
+## Cost Optimization
+
+### ALB Cost Analysis
+
+**Fixed costs:**
+
+```
+ALB base: $0.0225/hour × 730 hours = $16.43/month
+Load Balancer Capacity Units (LCU):
+  - New connections: $0.008/LCU-hour
+  - Active connections: $0.008/LCU-hour
+  - Processed bytes: $0.008/LCU-hour
+
+For low-traffic app: ~1-2 LCUs = $6-12/month
+Total: ~$22-28/month
+```
+
+**Cost optimization decisions:**
+
+| Decision                     | Savings | Trade-off                      |
+| ---------------------------- | ------- | ------------------------------ |
+| **Single ALB**               | N/A     | None (need at least one)       |
+| **HTTP only**                | $0      | No SSL/TLS (acceptable for QA) |
+| **Cross-zone enabled**       | $0      | Better availability            |
+| **Deletion protection (QA)** | N/A     | Can destroy when not in use    |
+
+**Comparison with alternatives:**
+
+| Solution         | Monthly Cost | Features                      |
+| ---------------- | ------------ | ----------------------------- |
+| **ALB**          | ~$25         | Full Layer 7, health checks   |
+| Nginx on EC2     | ~$8          | Manual setup, no auto-scaling |
+| No load balancer | $0           | Single point of failure       |
+
+**Decision:** ALB worth the cost for production-like environment and learning experience.
+
+---
+
+## Key Learnings
+
+### 1. Module Version Management
+
+- Always pin module versions explicitly
+- Latest version ≠ most stable version
+- Check community issues before upgrading
+- Version constraints prevent breaking changes
+
+### 2. Registry Modules
+
+- Powerful but not infallible (bugs exist)
+- Balance between convenience and control
+- Custom wrappers provide flexibility
+- Consistency with project structure matters
+
+### 3. Health Checks
+
+- Critical for high availability
+- Fast, lightweight endpoints preferred
+- Threshold tuning prevents flapping
+- Deregistration delay important for graceful shutdown
+
+### 4. Workspace-Aware Configuration
+
+- Different needs for QA vs Production
+- Conditional logic with ternary operators
+- Single codebase, environment-specific behavior
+- Document differences clearly
+
+---
+
+## Future Improvements
+
+### Phase 1 (Current Project)
+
+- ✅ Basic HTTP load balancing
+- ✅ Health checks on `/health`
+- ✅ Cross-zone distribution
+
+### Phase 2 (Production Readiness)
+
+- [ ] HTTPS with ACM certificate
+- [ ] WAF (Web Application Firewall) integration
+- [ ] Access logs to S3
+- [ ] CloudWatch alarms on target health
+
+### Phase 3 (Advanced Features)
+
+- [ ] Path-based routing (e.g., `/api/*` → Backend, `/admin/*` → Admin service)
+- [ ] Host-based routing (multiple domains)
+- [ ] Lambda targets for serverless functions
+- [ ] Sticky sessions (if needed)
+
+---

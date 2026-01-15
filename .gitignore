@@ -34,3 +34,8 @@ Thumbs.db
 *.pem
 *.pub   
 keys/
+
+# Scripts
+# Scripts logs
+scripts/*.log
+scripts/.env
