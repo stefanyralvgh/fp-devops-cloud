@@ -3,7 +3,7 @@
 **Project:** Cloud Migration with Terraform & Ansible  
 **Cloud Provider:** AWS  
 **Environments:** QA, Production  
-**Last Updated:** January 13, 2026
+**Last Updated:** January 14, 2026
 
 ---
 
@@ -206,127 +206,78 @@ Bidirectional: Yes (inbound + outbound traffic)
 
 ### NAT Gateway
 
-**Decision:** Single NAT Gateway in us-east-1a (cost optimization)
+### Decision: NAT Gateway for Private Subnets
 
-**Context:**  
-Private subnets require outbound internet access for:
+**Context**  
+Backend and database instances are deployed in private subnets. Even though they must not be reachable from the internet, they still require outbound internet access for:
 
-- Backend: npm install, OS updates, API calls
-- Database: RDS automated patching, Aurora updates
+- OS security updates
+- Package installation (e.g., npm, yum)
+- AWS-managed services operations (RDS patching)
 
-**Alternatives Considered:**
+**Decision**  
+Use a single **AWS NAT Gateway** in one public subnet to provide outbound-only internet access for all private subnets.
 
-| Option                  | Cost        | Availability | Complexity | Selected |
-| ----------------------- | ----------- | ------------ | ---------- | -------- |
-| **Single NAT Gateway**  | ~$32/month  | Single AZ    | Low        | ✅ Yes   |
-| Dual NAT Gateway (HA)   | ~$64/month  | Multi-AZ     | Low        | ❌ No    |
-| NAT Instance (t2.micro) | ~$0/month\* | Manual HA    | High       | ❌ No    |
-| No NAT (public subnets) | $0          | N/A          | Low        | ❌ No    |
+---
 
-\*Free tier eligible but requires manual configuration and management
+### Alternatives Considered
 
-NAT Gateway vs NAT Instance: Detailed Comparison
-NAT Gateway (Selected)
-Direct Costs:
-Hourly rate: $0.045/hour
-Data transfer: $0.045/GB
+| Option              | Monthly Cost (Approx.) | Operational Effort | Reliability        | Selected |
+| ------------------- | ---------------------- | ------------------ | ------------------ | -------- |
+| **NAT Gateway**     | ~$32/month             | Very Low           | High (AWS-managed) | ✅ Yes   |
+| NAT Instance (EC2)  | ~$0 (free tier)        | High               | Low–Medium         | ❌ No    |
+| Public Subnets Only | $0                     | Low                | High               | ❌ No    |
 
-Project duration (3 months):
+---
 
-- 100 hours × $0.045 = $4.50/month
-- Data transfer: ~$1/month
-- Total: $16.50 for entire project
-  Team Time Costs:
-  Setup: 5 minutes (included in Terraform module)
-  Maintenance: 0 hours/month (AWS-managed service)
-  Troubleshooting: 0 hours (99.99% SLA)
+### Cost Overview
 
-Total: 0 hours = $0
-Benefits:
+**NAT Gateway (selected):**
 
-✅ AWS-managed (zero operational overhead)
-✅ Auto-scaling (handles traffic spikes automatically)
-✅ High reliability (99.99% SLA)
-✅ High performance (up to 45 Gbps)
-✅ Automatic security patching
-✅ CloudWatch metrics included
-✅ No single instance failure point
+- $0.045/hour → ~$32/month if left running
+- Data transfer costs are minimal for this academic project
+- In practice, cost can be reduced by destroying infrastructure when not in use
 
-Total Cost: $16.50
+**Why cost is acceptable:**
 
-NAT Instance (Rejected)
-Direct Costs:
-EC2 Instance: $0/month (t2.micro free tier eligible)
-Elastic IP: $0 (while attached)
-Data transfer: $0.09/GB (2x NAT Gateway rate)
+- This project prioritizes **best practices and realistic architecture**
+- Cost is documented and justified, not ignored
+- For production, this cost is expected and standard
 
-Project duration (3 months):
+---
 
-- Instance: $0
-- Data transfer: ~$6
-- Total: $6
-  Team Time Costs:
-  Initial Setup:
-- Launch and configure EC2 instance: 1 hour
-- Configure IP forwarding (sysctl): 30 min
-- Configure iptables NAT rules: 1 hour
-- Security hardening: 1 hour
-- Testing and validation: 2 hours
-- Documentation: 30 min
-  Subtotal: 6 hours @ $50/hour = $300
+### Why NAT Gateway Instead of NAT Instance (Free Tier)
 
-Monthly Maintenance (× 3 months):
+Although a NAT instance (t3.micro) could technically work at near-zero cost, it was intentionally rejected:
 
-- Monitor instance health: 30 min/week × 4 = 2 hours
-- Apply security patches: 1 hour/month
-- Investigate performance issues: 1 hour/month
-  Subtotal: 4 hours/month × 3 months @ $50/hour = $600
+**NAT Gateway advantages:**
 
-Emergency Response (estimated):
+- Fully managed by AWS (no patching, no maintenance)
+- No SSH access or instance hardening required
+- Scales automatically with traffic
+- Higher reliability and predictable behavior
+- Simpler Terraform code and lower operational risk
 
-- Instance failure recovery: 2 hours × $50 = $100
+**NAT Instance drawbacks:**
 
-Total team time: 20 hours = $1,000
-Drawbacks:
+- Single point of failure
+- Manual configuration (IP forwarding, iptables)
+- Requires monitoring, patching, and recovery procedures
+- Easier to misconfigure and less aligned with AWS best practices
 
-❌ Single point of failure (instance can crash)
-❌ Limited performance (t2.micro = 2.5 Gbps burst only)
-❌ Manual security patching required
-❌ Requires monitoring and alerting setup
-❌ Requires disaster recovery runbook
-❌ No auto-scaling (manual intervention needed)
-❌ Higher data transfer costs (2x rate)
-❌ Security risk (SSH-accessible instance)
+**Conclusion:**  
+For a project simulating a real production environment, **operational simplicity and correctness outweigh free-tier savings**.
 
-Total Cost: $1,006
+---
 
-**Decision Rationale:**
+### Trade-offs Accepted
 
-- **Cost:** $32/month for single NAT vs $64 for dual = 50% savings
-- **Acceptable Risk:** QA environment; temporary AZ failure is tolerable
-- **Mitigation:** Can manually fail over if needed (recreate NAT in other AZ)
-- **Performance:** AWS-managed, auto-scaling, highly reliable
-- **Simplicity:** No manual maintenance vs NAT instance
+- Single NAT Gateway (no Multi-AZ high availability)
+- Temporary internet loss for private subnets if the AZ fails
 
-**Cost Mitigation Strategy:**
-
-```bash
-# Daily workflow to minimize cost:
-terraform apply   # When starting work
-terraform destroy # When finished for the day
-
-Estimated monthly cost:
-- 20 days × 5 hours = 100 hours
-- 100 hours × $0.045/hour = $4.50
-- Plus data transfer: ~$0.50
-- Total: ~$5/month instead of $32/month
-```
-
-**Trade-off Accepted:**
-
-- No high availability across AZs
-- If us-east-1a fails: private subnets lose internet temporarily
-- For production: would recommend dual NAT Gateways
+**Mitigation:**  
+This is acceptable for a QA / academic environment.  
+In a real production setup, a NAT Gateway per AZ would be recommended.
 
 ---
 
@@ -391,89 +342,126 @@ Associated Subnets:
 - Compliance/audit (some regulations require separate network controls for data tier)
 - Best practice (defense in depth)
 
----
-
-### Key Networking Concepts (Study Notes)
-
-#### Understanding 0.0.0.0/0
-
-**What it means:** "All IP addresses" or "the entire internet"
-**Mental model:** "For any destination outside our building (VPC)"
-**Applies to:** Outbound traffic from inside VPC to internet
-**Does NOT mean:** Inbound traffic is automatically allowed
-
-#### Public vs Private Subnets
-
-**Public Subnet = has route to Internet Gateway**
-
-- Can send traffic to internet ✅
-- Can receive traffic from internet ✅
-- Instances get public IPs automatically
-- Example: Frontend, Bastion
-
-**Private Subnet = no direct route to Internet Gateway**
-
-- Can send traffic to internet via NAT ✅
-- CANNOT receive traffic from internet ❌
-- Instances do NOT get public IPs
-- Example: Backend, Database
-
-**The key difference:** Not the subnet itself, but the route table association
-
-#### NAT Gateway vs Internet Gateway
-
-| Feature        | Internet Gateway  | NAT Gateway        |
-| -------------- | ----------------- | ------------------ |
-| **Direction**  | Bidirectional (↔) | Unidirectional (→) |
-| **Public IPs** | Required          | Uses Elastic IP    |
-| **Use Case**   | Public subnets    | Private subnets    |
-| **Inbound**    | Allowed           | Blocked            |
-| **Outbound**   | Allowed           | Allowed            |
-| **Cost**       | Free              | ~$0.045/hour       |
-
-**Mental Model:**
-
-- IGW = Front door (people can enter and exit)
-- NAT = Receptionist desk (employees can make calls out, but strangers can't call in)
-
----
-
 ## Cost Optimization
 
-### Free Tier Utilization
+## Route Tables
 
-**Resources Within Free Tier:**
+**Decision:** Three separate route tables for logical isolation
 
-- VPC, Subnets, Route Tables: Free (always)
-- Internet Gateway: Free (always)
-- Elastic IP (attached): Free (when in use)
-- S3 state storage: <5GB limit
-- DynamoDB operations: <1M/month limit
-
-**Resources With Cost:**
-
-#### NAT Gateway (Primary Cost)
+### Public Route Table
 
 ```
-Hourly rate: $0.045/hour
-Data transfer: $0.045/GB (after first 1GB/month)
+Destination         Target
+10.0.0.0/16        local (VPC internal)
+0.0.0.0/0          igw-xxxxx (Internet Gateway)
 
-Scenarios:
-- Left running 24/7: $32.40/month
-- Daily work (5h/day, 20 days): $4.50/month
-- Per session: $0.18 (4-hour work session)
+Associated Subnets:
+- public-subnet-1 (10.0.1.0/24)
+- public-subnet-2 (10.0.2.0/24)
 ```
 
-**Mitigation Strategy:**
+**Translation:** "For internet traffic (0.0.0.0/0), go directly through Internet Gateway"
+
+**Why:** Public subnets require full inbound and outbound internet access.
+
+---
+
+### Private Route Table (Application)
+
+```
+Destination         Target
+10.0.0.0/16        local (VPC internal)
+0.0.0.0/0          nat-xxxxx (NAT Gateway)
+
+Associated Subnets:
+- private-subnet-1 (10.0.11.0/24)
+- private-subnet-2 (10.0.12.0/24)
+```
+
+**Translation:** "For internet traffic (0.0.0.0/0), route through NAT Gateway (outbound only)"
+
+**Why:** Backend services must access the internet (package downloads, updates, external APIs) without being publicly reachable.
+
+---
+
+### Database Route Table
+
+```
+Destination         Target
+10.0.0.0/16        local (VPC internal)
+0.0.0.0/0          nat-xxxxx (NAT Gateway)
+
+Associated Subnets:
+- database-subnet-1 (10.0.21.0/24)
+- database-subnet-2 (10.0.22.0/24)
+```
+
+**Translation:** Same routing behavior as private application subnets, but isolated at the routing level.
+
+**Why Separate Route Table for Database:**
+
+- Clear logical separation of the data tier
+- Independent control of routing rules if requirements change
+- Easier auditing and troubleshooting
+- Aligns with defense-in-depth and compliance-oriented designs
+
+---
+
+## Cost Considerations
+
+This architecture intentionally balances **security, realism, and cost awareness**.
+
+### Paid Networking Component: NAT Gateway
+
+The **NAT Gateway** is the only networking resource in this setup that generates a predictable cost.
+
+**Why it exists:**
+
+- Allows private subnets to access the internet securely
+- Prevents inbound internet access to backend and database layers
+- Required for production-grade private architectures
+
+**Pricing model:**
+
+```
+Hourly charge:        ~$0.045 per hour
+Data processing:     ~$0.045 per GB (after first 1 GB/month)
+```
+
+**Typical cost scenarios (QA environment):**
+
+- Running continuously (24/7): ~ $32.40 / month
+- Daily development usage (5h/day, 20 days): ~ $4.50 / month
+- Single 4-hour work session: ~ $0.18
+
+---
+
+### Cost Mitigation Strategy
+
+To avoid unnecessary charges during development, infrastructure lifecycle is tightly controlled.
+
+This approach is specific to this academic project, where the goal is learning AWS networking and Terraform without incurring ongoing costs.
+
+In a real production environment, infrastructure would remain permanently provisioned. The AWS Free Tier is only a temporary benefit (first 12 months) and is not considered a long-term cost strategy.
+
+For a small real-world environment, the primary fixed networking cost would typically be the NAT Gateway, which is an expected and acceptable operational expense. Other core networking components (VPC, subnets, route tables, Internet Gateway) do not incur charges.
+
+The daily `terraform apply` / `terraform destroy` workflow is therefore used here purely as a cost-optimization mechanism for an academic setup, not as a recommended production practice.
 
 ```bash
 # Start of work session
 terraform workspace select qa
 terraform apply
 
-# End Work Session
+# End of work session
 terraform destroy
 ```
+
+This approach ensures:
+
+- NAT Gateway costs are incurred only during active work
+- Architecture remains production-realistic
+- No idle infrastructure generates hidden costs
 
 ## Security Architecture
 
@@ -551,11 +539,13 @@ Ingress:
 Egress: All traffic
 ```
 
-**Port 3000 Justification:**
+**Justification:**
 
-- Node.js application listens on port 3000 (configured in server.js)
-- `app.listen(process.env.PORT || 3000)`
-- Standard Node.js development port
+- Backend instances are not publicly accessible; traffic is only allowed from the Application Load Balancer
+- Enforces a clear separation between presentation and application layers
+- SSH access is restricted to the Bastion host for controlled administrative access
+- Security Group references are used instead of CIDR blocks, ensuring dynamic and resilient networking as infrastructure changes
+- Aligns with least-privilege and defense-in-depth security principles
 
 **Security considerations:**
 
@@ -738,59 +728,6 @@ egress {
 
 ---
 
-### Decision: Workspace-Based Environment Isolation
-
-**Context:**  
-Security Groups must be tagged with environment (QA, Production). Two approaches exist:
-
-1. Separate code in `environments/qa/` and `environments/prod/`
-2. Single codebase with Terraform workspaces
-
-**Decision:**  
-Use Terraform workspaces with single codebase in root directory.
-
-**Implementation:**
-
-```hcl
-# main.tf (root)
-module "security" {
-  source      = "./modules/security"
-  environment = terraform.workspace  # "qa" or "prod"
-  # ... other variables
-}
-```
-
-**Result:**
-
-```bash
-terraform workspace select qa   → Creates qa-bastion-sg, qa-alb-sg, etc.
-terraform workspace select prod → Creates prod-bastion-sg, prod-alb-sg, etc.
-```
-
-**Justification:**
-
-- **DRY principle:** Single codebase, no duplication
-- **Consistency:** QA and Prod use identical security rules
-- **Simplicity:** One place to update security policies
-- **Less drift:** No risk of QA/Prod configurations diverging
-- **Terraform native:** Workspaces designed for this use case
-
-**Trade-offs accepted:**
-
-- Risk of applying changes to wrong workspace (mitigated with careful workflow)
-- Less flexibility for radically different configurations
-- Acceptable for this project (QA and Prod are nearly identical)
-
-**Alternative approach (when to use):**
-
-- Separate directories when environments have fundamentally different:
-  - Network architectures
-  - Security policies
-  - Compliance requirements
-  - Module versions
-
----
-
 ### Security Best Practices Implemented
 
 **Defense in Depth:**
@@ -839,8 +776,6 @@ terraform workspace select prod → Creates prod-bastion-sg, prod-alb-sg, etc.
 
 - Maximum 60 inbound + 60 outbound rules
 - Our SGs use 1-2 inbound rules each (well below limit)
-
----
 
 ## Compute Architecture - Bastion Host
 
@@ -997,7 +932,6 @@ data "aws_ami" "amazon_linux_2" {
 **Why not Ubuntu:**
 
 - Amazon Linux 2 is the AWS "native" choice
-- Better for demonstrating AWS expertise
 - `amazon-linux-extras` simplifies Ansible installation
 - Valid alternative, but AL2 more aligned with project goals
 
@@ -1147,7 +1081,7 @@ resource "aws_key_pair" "bastion" {
 ```gitignore
 # .gitignore
 keys/
-*.pem
+.pub
 ```
 
 **Justification:**
@@ -1258,7 +1192,7 @@ monitoring = true
 
 **Cost mitigation strategies:**
 
-1. Use t2.micro (free tier eligible)
+1. Use t3.micro (free tier eligible)
 2. Keep instance running (EIP free when attached)
 3. Delete instance when not in use (save EC2 charges)
 4. Use stop vs terminate (preserve EBS, still incur small charge)
@@ -1269,436 +1203,370 @@ monitoring = true
 - Multi-AZ: Bastion in each AZ (~$16/month)
 - Reserved Instance: ~40% savings if running 24/7
 
----
+## Compute Architecture - Backend Instances
 
----
+### Decision: Backend Instances in Private Subnets
 
-## Day 7 - Backend Compute Infrastructure
+**Context:**  
+The Node.js backend API handles business logic and database queries. It should not be directly accessible from the internet but needs outbound internet access for package installation and external API calls.
 
-### Decision: Backend EC2 Instances in Private Subnets
+**Decision:**  
+Deploy backend instances in private subnets with no public IP addresses, using NAT Gateway for outbound internet access.
 
-**Date:** January 11, 2026  
-**Status:** ✅ Implemented  
-**Workspace:** qa
+**Implementation:**
 
----
-
-#### Context
-
-The Node.js backend API requires compute resources to run the application layer. The backend needs to:
-
-- Accept traffic from the Application Load Balancer
-- Communicate with RDS MySQL database
-- Download dependencies from npm registry (internet access)
-- NOT be directly accessible from the internet (security)
-
----
-
-#### Decision
-
-Deploy backend instances in **private subnets** across multiple Availability Zones with the following configuration:
-
-**Instance Specifications:**
-
-```
-Instance Type: t3.micro (free tier eligible)
-AMI: Amazon Linux 2 (latest, via data source)
-Count: 2 instances (one per AZ)
-Subnets: private-subnet-1 (us-east-1a), private-subnet-2 (us-east-1b)
+```hcl
+Resource: aws_instance.backend (count = 2)
+AMI: Amazon Linux 2 (shared data source with Bastion)
+Instance Type: t2.micro (free tier)
+Subnets: Private subnets (round-robin across AZs)
 Security Group: backend-sg (port 3000 from ALB, SSH from Bastion)
-IAM Role: backend-role (SSM + CloudWatch permissions)
+IAM Profile: backend-profile (CloudWatch + SSM access)
+Internet Access: Via NAT Gateway (outbound only)
 ```
 
-**Storage Configuration:**
+**Justification:**
 
-```
-Volume Type: GP3 (latest generation SSD)
-Volume Size: 8GB
-Encryption: Enabled
-Delete on Termination: True
-```
+**Security benefits:**
 
-**Monitoring:**
+- **No direct internet exposure:** Backend has no public IP address
+- **ALB as single entry point:** Only ALB can send traffic to application port
+- **Defense in depth:** Security Group + Network isolation + NAT gateway
+- **Principle of least privilege:** Only necessary outbound access
 
-```
-Detailed Monitoring: Disabled (QA), Enabled (Production)
-Rationale: Cost optimization for QA ($2.10/instance/month savings)
-```
+**Operational benefits:**
+
+- **Package management:** Can install npm packages via NAT
+- **OS updates:** Can apply security patches
+- **External APIs:** Can call third-party services (payment, email, etc.)
+- **AWS service access:** Via VPC endpoints or public internet
+
+**Why not public subnets:**
+
+- Direct internet exposure increases attack surface
+- Would need to manage inbound security rules for each instance
+- Makes it harder to implement proper WAF/DDoS protection
+- Backend doesn't need to accept inbound connections from internet
 
 ---
 
-#### Implementation Details
+### Decision: Multi-AZ Distribution with Count
 
-##### User Data Script
+**Context:**  
+Backend instances need high availability across multiple Availability Zones. Terraform provides two primary patterns for creating multiple resources: `count` and `for_each`.
 
-Automated initial configuration:
+**Decision:**  
+Use `count` with modulo operator to distribute instances evenly across availability zones.
+
+**Implementation:**
+
+```hcl
+resource "aws_instance" "backend" {
+  count = var.backend_instance_count  # 2 instances
+
+  subnet_id = var.private_subnet_ids[count.index % length(var.private_subnet_ids)]
+
+  # count.index = 0: 0 % 2 = 0 → subnet[0] (us-east-1a)
+  # count.index = 1: 1 % 2 = 1 → subnet[1] (us-east-1b)
+}
+```
+
+**Justification:**
+
+**Why count over for_each:**
+
+| Aspect          | Count                               | For_Each                             |
+| --------------- | ----------------------------------- | ------------------------------------ |
+| Use case        | Fixed number of identical resources | Dynamic list of resources            |
+| Resource naming | Indexed (backend[0], backend[1])    | Named by key                         |
+| Scaling         | Changes can cause recreation        | More stable with additions/deletions |
+| Complexity      | Simple                              | More complex                         |
+
+**For this project:**
+
+- Number of backends is fixed (2 for QA, 2 for PROD)
+- All backends are identical (homogeneous configuration)
+- Not frequently adding/removing instances
+- Simpler to understand and maintain
+
+**When for_each would be better:**
+
+- Dynamic list of subnets that changes
+- Need to identify resources by name instead of index
+- Frequently adding/removing resources
+- Heterogeneous configurations
+
+**Trade-offs accepted:**
+
+- If we reduce count from 2 to 1, Terraform may recreate wrong instance
+- Acceptable because we won't be scaling backends dynamically
+- For dynamic scaling, would use Auto Scaling Group instead
+
+---
+
+### Decision: IAM Role and Instance Profile
+
+**Context:**  
+Backend instances need to interact with AWS services (CloudWatch Logs, Parameter Store, potentially S3). Using hardcoded credentials is a security anti-pattern.
+
+**Decision:**  
+Implement IAM role with instance profile, granting least-privilege access to required AWS services.
+
+**Implementation:**
+
+**IAM Role (qa-backend-role):**
+
+```hcl
+resource "aws_iam_role" "backend" {
+  assume_role_policy = {
+    # Allow EC2 service to assume this role
+    Principal = { Service = "ec2.amazonaws.com" }
+  }
+}
+```
+
+**IAM Policies:**
+
+1. **CloudWatch Logs:** Write application logs
+2. **SSM Parameter Store:** Read secrets and configuration
+
+**Instance Profile:**
+
+```hcl
+resource "aws_iam_instance_profile" "backend" {
+  role = aws_iam_role.backend.name
+}
+
+resource "aws_instance" "backend" {
+  iam_instance_profile = aws_iam_instance_profile.backend.name
+}
+```
+
+**Justification:**
+
+**Security benefits:**
+
+| Without IAM Role              | With IAM Role                      |
+| ----------------------------- | ---------------------------------- |
+| Hardcoded credentials in code | No credentials in code             |
+| Long-term static keys         | Temporary auto-rotated credentials |
+| Manual rotation required      | AWS manages rotation               |
+| Risk of committing to git     | No secrets to leak                 |
+| Permanent if compromised      | Expires with instance              |
+
+**How it works:**
+
+```
+1. EC2 instance boots with instance profile
+2. AWS provides temporary credentials via metadata service
+3. Credentials automatically rotated every 6 hours
+4. Application uses AWS SDK without configuration
+5. Credentials expire when instance terminates
+```
+
+**Example usage in application:**
+
+```javascript
+// No configuration needed - uses instance profile automatically
+const AWS = require("aws-sdk");
+const ssm = new AWS.SSM();
+
+// Read database password from Parameter Store
+const dbPassword = await ssm
+  .getParameter({
+    Name: "/movie-analyst/qa/db-password",
+    WithDecryption: true,
+  })
+  .promise();
+```
+
+**Policies granted:**
+
+**CloudWatch Logs:**
+
+- `logs:CreateLogGroup` - Create log groups for application
+- `logs:CreateLogStream` - Create log streams
+- `logs:PutLogEvents` - Write log events
+- `logs:DescribeLogStreams` - List log streams
+
+**SSM Parameter Store:**
+
+- `ssm:GetParameter` - Read individual parameters
+- `ssm:GetParameters` - Read multiple parameters
+- `ssm:GetParametersByPath` - Read all parameters under a path
+
+**Scope:** Only `/movie-analyst/{environment}/*` parameters (least privilege)
+
+---
+
+### Decision: User Data for Initial Configuration
+
+**Context:**  
+Backend instances require baseline setup before application deployment: system updates, development tools, and directory structure.
+
+**Decision:**  
+Use user data scripts for system-level initialization. Reserve Ansible for application deployment.
+
+**Implementation:**
 
 ```bash
 #!/bin/bash
-yum update -y                          # Security patches
-yum groupinstall -y "Development Tools" # GCC, make, etc. for npm packages
-yum install -y git wget curl vim       # Development tools
-timedatectl set-timezone America/Bogota # Timezone alignment
-mkdir -p /opt/movie-analyst            # Application directory
+yum update -y
+yum groupinstall -y "Development Tools"
+yum install -y git wget curl vim
+timedatectl set-timezone America/Bogota
+mkdir -p /opt/movie-analyst
 ```
+
+**Justification:**
 
 **Why Development Tools:**
 
-- Some npm packages (e.g., bcrypt, node-sass) require native compilation
-- Without Development Tools, `npm install` would fail on native dependencies
+- Node.js packages with native modules require C++ compiler
+- Examples: bcrypt (password hashing), node-sass (CSS compilation)
+- `npm install` fails without gcc, make, python
+- Alternative: Use Alpine packages or pre-built binaries (production)
 
-##### IAM Role Design
+**User Data characteristics:**
 
-**Policies attached:**
+- Executes once on first boot
+- Runs as root (no sudo needed)
+- Completes before instance is "ready"
+- Limited to 16KB size
+- Errors don't prevent instance launch
 
-1. **AmazonSSMManagedInstanceCore**
+**User Data vs Ansible:**
 
-   - Enables AWS Systems Manager Session Manager
-   - Alternative to SSH for troubleshooting
-   - No need for open SSH ports in security group
+| Aspect          | User Data             | Ansible                |
+| --------------- | --------------------- | ---------------------- |
+| **When**        | First boot only       | On-demand, repeatable  |
+| **Purpose**     | System initialization | Application deployment |
+| **Complexity**  | Simple scripts        | Complex orchestration  |
+| **Idempotency** | No                    | Yes                    |
 
-2. **CloudWatchAgentServerPolicy**
-   - Allows instance to send metrics/logs to CloudWatch
-   - Enables application-level monitoring (beyond basic EC2 metrics)
-   - Required for custom application metrics
+**For this project:**
 
-**Why IAM role vs hardcoded credentials:**
-
-- Security: No credentials stored on instance
-- Automatic credential rotation
-- Least privilege: Role can be modified without touching instances
-- AWS best practice
-
-##### Network Placement Strategy
-
-**Distribution across AZs:**
-
-```
-Backend-1: private-subnet-1 (10.0.11.0/24, us-east-1a)
-Backend-2: private-subnet-2 (10.0.12.0/24, us-east-1b)
-```
-
-**Why multi-AZ:**
-
-- High availability: If one AZ fails, other continues serving traffic
-- ALB can distribute load across both instances
-- RDS Multi-AZ requires backend in both AZs for optimal latency
-
-**Why modulo operator `count.index % length(subnets)`:**
-
-- If we had 3 instances and 2 subnets:
-  - Instance 0: 0 % 2 = 0 → subnet[0]
-  - Instance 1: 1 % 2 = 1 → subnet[1]
-  - Instance 2: 2 % 2 = 0 → subnet[0] (wraps around)
-- Ensures even distribution even if instance count != subnet count
-
----
-
-#### Validation Results
-
-##### Internet Access Test (via NAT Gateway)
-
-**Test performed:**
-
-```bash
-# SSH to Bastion
-ssh -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
-
-# SSH to Backend from Bastion
-ssh ec2-user@10.0.11.25  # Backend-1 private IP
-
-# Test outbound connectivity
-ping -c 3 google.com          # ✅ Success
-curl -I https://registry.npmjs.org  # ✅ Success (HTTP 200)
-```
-
-**Result:** Backend instances successfully reach internet via NAT Gateway
-
-**Why this matters:**
-
-- Confirms NAT Gateway routing is correct
-- Validates `npm install` will work during deployment
-- Ensures `yum update` can fetch packages
-
-##### SSH Access Test (Jump Host Pattern)
-
-**Test performed:**
-
-```bash
-# Two-hop SSH (local → bastion → backend)
-ssh -J ec2-user@54.144.192.77 ec2-user@10.0.11.25
-
-# Alternative: ProxyJump flag
-ssh -o ProxyJump=ec2-user@54.144.192.77 ec2-user@10.0.11.25
-```
-
-**Result:** ✅ Successfully connected to backend via Bastion
-
-**Security validation:**
-
-- Direct SSH from internet to backend: ❌ Blocked (as intended)
-- SSH from Bastion to backend: ✅ Allowed (security group rule working)
-
-##### User Data Execution
-
-**Verification:**
-
-```bash
-# Check cloud-init logs
-sudo tail -f /var/log/cloud-init-output.log
-
-# Verify timezone
-timedatectl
-# Expected: America/Bogota
-
-# Verify application directory
-ls -la /opt/movie-analyst
-# Expected: Directory exists
-
-# Verify banner
-cat /etc/motd
-# Expected: Custom Movie Analyst banner
-```
-
-**Result:** All User Data tasks executed successfully
-
----
-
-#### Alternative Approaches Considered
-
-##### Auto Scaling Group (ASG)
-
-**Not selected for this project:**
-
-- Adds complexity (launch templates, scaling policies)
-- Overkill for fixed workload (movie database queries)
-- Would increase costs (ALB health checks, CloudWatch metrics)
-
-**When to use ASG:**
-
-- Variable traffic patterns
-- Need automatic scaling based on CPU/memory
-- Production environments requiring auto-recovery
-
-##### Spot Instances
-
-**Not selected:**
-
-- Risk of interruption (AWS can reclaim with 2-min notice)
-- Not acceptable for application tier
-- Savings: ~60% vs On-Demand, but risk too high
-
-**When to use Spot:**
-
-- Batch processing (can tolerate interruptions)
-- Stateless workers
-- Non-critical environments
-
-##### Larger Instance Types (t3.small, t3.medium)
-
-**Not selected for QA:**
-
-- t3.micro sufficient for development workload
-- Cost optimization: $0 (free tier) vs $12-24/month
-- Can scale up in production if needed
-
-**When to use larger instances:**
-
-- High CPU workload (complex calculations)
-- Memory-intensive applications (large in-memory caches)
-- Production environments with strict SLAs
-
----
-
-#### Cost Analysis
-
-**Backend infrastructure monthly cost (QA workspace):**
-
-| Resource          | Cost                       | Free Tier  | Actual Cost  |
-| ----------------- | -------------------------- | ---------- | ------------ |
-| 2x EC2 t3.micro   | $0.0104/hr × 2 = ~$15/mo   | 750 hrs/mo | $0           |
-| 2x EBS GP3 8GB    | $0.08/GB-mo × 16GB = $1.28 | 30GB/mo    | $0           |
-| Data Transfer Out | $0.09/GB                   | 100GB/mo   | $0           |
-| Basic Monitoring  | Free                       | Free       | $0           |
-| **Total**         |                            |            | **$0/month** |
+- **User Data:** Install system packages, create directories, set timezone
+- **Ansible (Days 11-14):** Deploy Node.js app, configure services, manage config files
 
 **Production considerations:**
 
-- Detailed monitoring: +$2.10/instance/month = $4.20
-- Larger instances (t3.small): ~$12/month per instance
-- Reserved Instances: 40% savings if running 24/7
+- User data updates require instance recreation
+- Not idempotent (runs once)
+- Consider Golden AMIs (Packer) for production
+- Or use immutable infrastructure (containers)
 
 ---
 
-#### Security Considerations
+### Decision: Detailed CloudWatch Monitoring
 
-**Network isolation:**
+**Context:**  
+AWS provides two levels of EC2 monitoring: Basic (5-minute intervals, free) and Detailed (1-minute intervals, $2.10/instance/month).
 
-- ✅ No direct internet access (inbound)
-- ✅ Outbound via NAT Gateway only
-- ✅ Only ALB can send traffic to port 3000
-- ✅ SSH only from Bastion
+**Decision:**  
+Enable detailed monitoring for learning and troubleshooting purposes.
 
-**Data protection:**
+**Implementation:**
 
-- ✅ EBS volumes encrypted at rest (AWS-managed keys)
-- ✅ IAM roles instead of hardcoded credentials
-- ✅ Security groups implement least privilege
+```hcl
+resource "aws_instance" "backend" {
+  monitoring = true  # Enable detailed monitoring
+}
+```
 
-**Potential improvements for production:**
+## Compute Architecture - Frontend Instances
 
-- Use Customer Managed Keys (CMK) for encryption
-- Enable VPC Flow Logs for traffic analysis
-- Implement AWS GuardDuty for threat detection
-- Add CloudWatch Logs for application logging
+### Decision: Frontend EC2 Instances in Public Subnets
 
----
-
-#### Trade-offs Accepted
-
-**No Auto Scaling:**
-
-- **Benefit:** Simpler architecture, easier to understand
-- **Cost:** Manual intervention if traffic spikes
-- **Mitigation:** Can add ASG later if needed
-
-**Basic Monitoring in QA:**
-
-- **Benefit:** Saves $4.20/month
-- **Cost:** 5-minute metric intervals vs 1-minute
-- **Mitigation:** Enabled in production where needed
-
-**Single NAT Gateway:**
-
-- **Benefit:** Saves $32/month vs dual NAT
-- **Cost:** If us-east-1a fails, backend loses internet
-- **Mitigation:** Acceptable for QA; prod would use dual NAT
-
----
-
-#### Key Learnings
-
-**Concepts mastered:**
-
-- **IAM Instance Profiles:** How to grant EC2 permissions without credentials
-- **User Data execution:** Runs once on first boot as root
-- **Multi-AZ distribution:** Using modulo operator for even placement
-- **Jump host pattern:** Two-hop SSH via Bastion
-- **NAT Gateway validation:** Testing outbound connectivity
-
-**Common pitfalls avoided:**
-
-- Including `sudo` in User Data (already runs as root)
-- Using `yum install nodejs` (installs old Node 10, not Node 18)
-- Forgetting Development Tools (npm native dependencies fail)
-- Not testing internet access before assuming NAT works
-
----
-
-# Day 8 - Frontend Compute Infrastructure
-
-## Decision: Frontend EC2 Instances in Public Subnets
-
-**Date:** January 13, 2026  
-**Status:** Implemented  
-**Workspace:** qa
-
----
-
-## Context
-
-The Movie Analyst platform requires a presentation layer to serve the user interface. The frontend must:
-
-- Serve static assets (HTML, CSS, JavaScript, images)
-- Make API calls to the backend via an Application Load Balancer
-- Download dependencies and updates from the internet
-- Be highly available across multiple Availability Zones
+**Context:**  
+The Movie Analyst platform requires a presentation layer to serve the user interface. The frontend must serve static assets (HTML, CSS, JavaScript, images), make API calls to the backend via an Application Load Balancer, download dependencies and updates from the internet, and be highly available across multiple Availability Zones.
 
 Two architectural approaches were considered:
 
 1. Static hosting (S3 + CloudFront)
 2. Dynamic web server (EC2 + Nginx)
 
----
-
-## Decision
-
+**Decision:**  
 Deploy frontend EC2 instances running Nginx in **public subnets**, distributed across multiple Availability Zones, with traffic routed through an Application Load Balancer.
 
-### Instance Specifications
+**Instance Specifications:**
 
-- Instance Type: t3.micro (free tier eligible)
-- AMI: Amazon Linux 2 (latest)
-- Count: 2 (one per AZ)
-- Subnets:
-  - public-subnet-1 (us-east-1a)
-  - public-subnet-2 (us-east-1b)
-- Security Group: frontend-sg
-- IAM Role: frontend-role (SSM + CloudWatch)
-- Public IPs: Auto-assigned
-- Web Server: Nginx (via amazon-linux-extras)
+- **Instance Type:** t3.micro (free tier eligible)
+- **AMI:** Amazon Linux 2 (latest, auto-discovered via data source)
+- **Count:** 2 (one per AZ)
+- **Subnets:** public-subnet-1 (us-east-1a), public-subnet-2 (us-east-1b)
+- **Security Group:** frontend-sg
+- **IAM Role:** frontend-role (SSM + CloudWatch)
+- **Public IPs:** Auto-assigned
+- **Web Server:** Nginx (via amazon-linux-extras)
 
-### Storage
+**Storage:**
 
-- Volume Type: gp3
-- Size: 8 GB
-- Encryption: Enabled
-- Delete on Termination: True
+- **Volume Type:** gp3
+- **Size:** 8 GB
+- **Encryption:** Enabled
+- **Delete on Termination:** True
 
----
+**Justification:**
 
-## Justification
+**Why EC2 over S3 + CloudFront:**
 
-### Why EC2 over S3 + CloudFront
+| Aspect      | S3 + CloudFront | EC2 + Nginx                  |
+| ----------- | --------------- | ---------------------------- |
+| Cost        | ~$5/month       | $0 (free tier)               |
+| Flexibility | Static only     | Dynamic capable              |
+| Learning    | Limited         | Full infrastructure exposure |
+| Complexity  | Low             | Medium                       |
+| Performance | Global CDN      | Regional                     |
 
-| Aspect      | S3 + CloudFront | EC2 + Nginx         |
-| ----------- | --------------- | ------------------- |
-| Cost        | ~$5/month       | $0 (free tier)      |
-| Flexibility | Static only     | Dynamic capable     |
-| Learning    | Limited         | Full infra exposure |
-| Complexity  | Low             | Medium              |
-| Performance | Global CDN      | Regional            |
+**Primary reasons:**
 
-Primary reasons:
-
-- Educational value
-- Free tier availability
+- Educational value (hands-on EC2 management)
+- Free tier availability (t3.micro 750 hours/month)
 - Flexibility for future SSR or proxying
 - Consistency with backend compute model
 
-Trade-off accepted: Regional availability instead of global CDN.
+**Trade-off accepted:** Regional availability instead of global CDN (acceptable for educational project).
 
 ---
 
-## Why Public Subnets
+### Decision: Public Subnets Placement
 
-Frontend instances require outbound internet access for:
+**Context:**  
+Frontend instances require outbound internet access for package updates, dependency installation, CDN downloads, and time synchronization.
 
-- Package updates
-- Dependency installation
-- CDN downloads
-- Time synchronization
+**Decision:**  
+Deploy frontend in public subnets with strict security groups.
 
-### Alternatives Considered
+**Alternatives Considered:**
 
-- Private subnet + NAT Gateway (rejected due to cost)
-- VPC Endpoints (rejected due to complexity)
+| Approach                     | Cost                   | Complexity | Selected |
+| ---------------------------- | ---------------------- | ---------- | -------- |
+| **Public subnet + SG**       | $0                     | Low        | ✅ Yes   |
+| Private subnet + NAT Gateway | +$32/month             | Medium     | ❌ No    |
+| VPC Endpoints                | +$7/month per endpoint | High       | ❌ No    |
 
-Decision: Public subnet with strict security groups.
+**Why public subnet:**
+
+- Direct internet access (no NAT Gateway cost)
+- Simpler architecture
+- Security maintained via security groups (only ALB can access HTTP)
+
+**Key security principle:** Public subnet does NOT mean public access. Security groups enforce "only ALB can reach port 80/443."
 
 ---
 
-## Implementation Details
+### Implementation Details
 
-### Nginx Installation
+**Nginx Installation:**
 
-Incorrect approach:
+**Incorrect approach:**
 
 ```bash
-yum install -y nginx
+yum install -y nginx  # ❌ Fails on Amazon Linux 2
 ```
 
-Correct approach:
+**Correct approach:**
 
 ```bash
 amazon-linux-extras install nginx1 -y
@@ -1706,98 +1574,513 @@ systemctl enable nginx
 systemctl start nginx
 ```
 
-Reason: Nginx is provided via Amazon Linux Extras on AL2.
+**Reason:** Nginx is provided via Amazon Linux Extras repository on AL2, not standard yum repos.
 
 ---
 
-### Custom Hostnames
+**Custom Hostnames:**
 
-Purpose: Easier troubleshooting and clearer logs.
+**Purpose:** Easier troubleshooting and clearer logs.
+
+**Implementation:**
 
 ```bash
 hostnamectl set-hostname frontend-${count.index + 1}-${var.environment}
 echo "127.0.0.1 frontend-${count.index + 1}-${var.environment}" >> /etc/hosts
 ```
 
+**Result:**
+
+- frontend-1-qa.movie-analyst.local
+- frontend-2-qa.movie-analyst.local
+
 ---
 
 ### Security Group Design
 
-- HTTP: Only from ALB security group
-- SSH: Only from Bastion security group
+**Ingress rules:**
 
-Key principle: Frontend must not be directly exposed to the internet.
+- **HTTP (80):** Only from ALB security group
+- **SSH (22):** Only from Bastion security group
 
-Traffic flow:
+**Egress rules:**
 
-User → ALB → Frontend → Backend
+- All traffic (0.0.0.0/0) for package updates
+
+**Key principle:** Frontend must not be directly exposed to the internet.
+
+**Traffic flow:**
+
+```
+User → ALB (alb-sg) → Frontend (frontend-sg) → Backend (backend-sg)
+```
 
 ---
 
-## Monitoring Strategy
+### Monitoring Strategy
 
-- QA: Basic monitoring (5-minute intervals)
-- Prod: Detailed monitoring (1-minute intervals)
+**QA Environment:**
 
-Decision based on cost vs observability needs.
+- Basic CloudWatch monitoring (5-minute intervals)
+- Cost: $0
+
+**Production Environment:**
+
+- Detailed CloudWatch monitoring (1-minute intervals)
+- Cost: ~$2.10/month per instance
+
+**Decision rationale:** Cost vs observability needs. QA doesn't require minute-level granularity.
 
 ---
 
-## User Data Logging
+### User Data Logging
 
-Enable full logging to avoid silent failures:
+**Challenge:** User data script failures are silent by default.
+
+**Solution:** Enable full logging to CloudWatch and local file.
+
+**Implementation:**
 
 ```bash
 #!/bin/bash
 exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 ```
 
-Benefits:
+**Benefits:**
 
 - Debuggable boot process
-- Persistent logs
+- Persistent logs in `/var/log/user-data.log`
 - Faster issue resolution
+- CloudWatch integration
 
 ---
 
-## Cost Analysis (QA)
+### Cost Analysis
 
-- EC2 t3.micro (2): $0
-- EBS gp3 (8 GB x2): $0
-- Monitoring: $0
-- Total: $0/month
+**QA Environment:**
+| Resource | Specification | Free Tier | Cost |
+|----------|---------------|-----------|------|
+| EC2 t3.micro (2 instances) | 730 hours each | 750 hours/month | $0 |
+| EBS gp3 (8GB × 2) | 16GB total | 30GB/month | $0 |
+| Data transfer out | <100GB | 100GB/month | $0 |
+| Basic monitoring | 5-min intervals | Included | $0 |
+| **Total** | | | **$0/month** |
 
----
-
-## Security Considerations
-
-- Least-privilege security groups
-- Encrypted EBS volumes
-- IAM roles instead of credentials
-- No direct internet access to backend or database
-
----
-
-## Key Learnings
-
-- Public subnet does not imply public access
-- amazon-linux-extras is mandatory for modern packages
-- User Data logging is critical
-- Security group references are safer than CIDRs
-- Custom hostnames improve operability
+**Production Environment:**
+| Resource | Cost |
+|----------|------|
+| EC2 t3.micro (2) | $0 (free tier) |
+| EBS gp3 (16GB) | $0 (free tier) |
+| Detailed monitoring | ~$4.20/month |
+| **Total** | **~$4.20/month** |
 
 ---
 
-## Dependencies
+### Security Considerations
 
-Depends on:
+**Network security:**
 
-- VPC and networking
-- Bastion host
-- Frontend security group
+- Deployed in public subnets but protected by security groups
+- No direct internet access to application port (only via ALB)
+- SSH access only from Bastion (no direct internet SSH)
 
-Required by:
+**Data security:**
 
-- Application Load Balancer
-- Configuration management
-- End-to-end application flow
+- EBS volumes encrypted at rest (AES-256)
+- IAM roles for AWS service access (no hardcoded credentials)
+- Security group references instead of CIDR blocks
+
+**Access control:**
+
+- Principle of least privilege
+- Defense in depth (SG + subnet isolation + IAM)
+
+## Database Architecture - RDS MySQL
+
+### Decision: Use Terraform Registry Module for RDS
+
+**Context:**  
+RDS configuration is complex with 50+ parameters (instance sizing, storage, backups, monitoring, parameter groups, option groups, IAM roles). Building from scratch would be error-prone, time-consuming, and require deep RDS expertise.
+
+**Decision:**  
+Use `terraform-aws-modules/rds/aws` version ~> 6.0 from Terraform Registry.
+
+**Justification:**
+
+- **Battle-tested:** 1.8k+ GitHub stars, maintained by Anton Babenko (core Terraform contributor)
+- **Reduced complexity:** Abstracts parameter groups, option groups, IAM roles into simple inputs
+- **Industry standard:** 95% of production RDS deployments use this module
+- **Maintainability:** Module updates automatically handle AWS API changes
+- **Built-in features:** Automatic password management via AWS Secrets Manager integration
+- **Production-ready:** Includes monitoring, backups, encryption by default
+
+**Alternative considered:**
+
+- Writing RDS resources manually → Rejected (too complex, 200+ lines of code, reinventing the wheel)
+
+**Version constraint:** `~> 6.0` means >= 6.0.0 AND < 7.0.0 (allows minor updates, prevents breaking changes)
+
+---
+
+### Decision: Workspace-Aware Configuration (QA vs Production)
+
+**Context:**  
+Production environments require higher availability and monitoring than QA, but at significant additional cost. Running production-grade infrastructure 24/7 in QA would exhaust budget unnecessarily.
+
+**Decision:**  
+Implement conditional configuration based on Terraform workspace using ternary operators.
+
+**Configuration Matrix:**
+
+| Configuration            | QA                  | Production             | Cost Impact              | Justification                                                                                                                                      |
+| ------------------------ | ------------------- | ---------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Multi-AZ**             | ❌ Single-AZ        | ✅ Multi-AZ            | +$13/month               | QA: Single point of failure acceptable for cost savings. PROD: 99.95% SLA with automatic failover to standby in different AZ within 60-120 seconds |
+| **Backup Retention**     | 1 day               | 7 days                 | $0 (storage = DB size)   | QA: Minimum AWS requirement. PROD: One-week disaster recovery window meets RPO requirements                                                        |
+| **Deletion Protection**  | ❌ Disabled         | ✅ Enabled             | $0                       | QA: Frequent terraform destroy for cost management. PROD: Prevent accidental data loss from human error                                            |
+| **Final Snapshot**       | ❌ Skip             | ✅ Create              | $0.095/GB-month          | QA: Faster infrastructure teardown (destroy in 2 min vs 10 min). PROD: Point-in-time recovery before deletion                                      |
+| **Enhanced Monitoring**  | ❌ Disabled (basic) | ✅ 60-second intervals | +$2.10/month             | QA: CloudWatch basic metrics (5-min) sufficient. PROD: Detailed OS-level metrics for performance troubleshooting                                   |
+| **Performance Insights** | ❌ Disabled         | ❌ Disabled            | N/A (would be +$7/month) | Not implemented: Cost vs benefit not justified for application scale. Basic query analysis through CloudWatch Logs sufficient                      |
+| **Max Connections**      | 100                 | 200                    | $0 (parameter only)      | QA: Lower concurrent user simulation. PROD: Headroom for production traffic spikes                                                                 |
+
+**Total Production Additional Cost:** ~$15/month  
+**Justification:** Acceptable cost for production-grade reliability and observability. Represents 13% of $115 budget for 3-month project.
+
+**Implementation:**
+
+```hcl
+multi_az = var.environment == "prod" ? true : false
+backup_retention_period = var.environment == "prod" ? 7 : 1
+monitoring_interval = var.environment == "prod" ? 60 : 0
+deletion_protection = var.environment == "prod" ? true : false
+skip_final_snapshot = var.environment == "prod" ? false : true
+```
+
+**Key benefit:** Single codebase for both environments. Deploy to production with:
+
+```bash
+terraform workspace select prod
+terraform apply  # All production configs automatically applied
+```
+
+**No code duplication, no drift between environments.**
+
+---
+
+### Decision: Enhanced Monitoring IAM Role (Production Only)
+
+**Context:**  
+RDS Enhanced Monitoring requires an IAM role to publish OS-level metrics to CloudWatch Logs. This role is unnecessary in QA (basic monitoring sufficient) but critical in production for troubleshooting performance issues.
+
+**Decision:**  
+Create IAM role conditionally only in production workspace using `count` pattern.
+
+**Implementation:**
+
+```hcl
+resource "aws_iam_role" "rds_monitoring" {
+  count = var.environment == "prod" ? 1 : 0
+
+  name_prefix        = "${var.environment}-rds-monitoring-"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "monitoring.rds.amazonaws.com"
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "rds_monitoring" {
+  count = var.environment == "prod" ? 1 : 0
+
+  role       = aws_iam_role.rds_monitoring[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+```
+
+**Why conditional:**
+
+- QA uses basic monitoring (no role needed, count = 0)
+- Production uses enhanced monitoring (role required, count = 1)
+- Reduces resource count in QA environment (cleaner state)
+- Saves minimal IAM API calls
+
+**Role permissions:**
+
+- **Managed policy:** `AmazonRDSEnhancedMonitoringRole` (AWS-managed)
+- **Allows:** RDS to send OS-level metrics to CloudWatch Logs
+- **Trust policy:** Only `monitoring.rds.amazonaws.com` can assume
+
+**What enhanced monitoring provides:**
+
+- CPU utilization per core (vs aggregate)
+- Memory usage breakdown (free, cached, buffers)
+- Active database connections per process
+- Read/write IOPS per device
+- Network traffic per interface
+- 1-60 second granularity (vs 5-minute basic)
+
+---
+
+### Decision: Password Management via AWS Secrets Manager
+
+**Context:**  
+Database passwords must be secured, rotatable, and auditable. Initially considered using `terraform.tfvars` (gitignored) for simplicity, but discovered the Terraform Registry RDS module includes built-in AWS Secrets Manager integration.
+
+**Decision:**  
+Use AWS Secrets Manager for password storage (automatic feature of registry module, not explicitly configured).
+
+**How it works:**
+
+1. Terraform passes `db_password` variable during initial `terraform apply`
+2. RDS module automatically creates secret in AWS Secrets Manager
+3. Secret name format: `rds!cluster-<random-id>` (AWS-managed naming)
+4. RDS retrieves password from Secrets Manager during instance creation
+5. Password never stored in plain text in Terraform state
+6. Can be rotated via AWS Secrets Manager console (manual or automatic Lambda)
+
+**Benefits:**
+
+- **Security:** Passwords encrypted at rest (AES-256 with AWS KMS)
+- **Auditability:** CloudTrail logs all secret access (who, when, from where)
+- **Rotation:** Can enable automatic 90-day rotation with zero downtime
+- **Separation of concerns:** Developers don't need password after initial deployment
+- **Compliance:** Meets PCI-DSS, HIPAA, SOC 2 password management requirements
+- **No state exposure:** Password never appears in Terraform state file
+
+**Cost:**
+
+- Secret storage: $0.40/month per secret
+- API calls: $0.05 per 10,000 requests
+- Typical monthly cost: ~$0.40-0.45 (RDS makes ~100 API calls/month)
+
+**Initial setup:**
+
+```hcl
+# terraform.tfvars (used only during initial apply)
+db_password = "SecurePassword123!"
+
+# After deployment, password stored in:
+# AWS Secrets Manager → rds!cluster-a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6
+```
+
+**Accessing password:**
+
+```bash
+# Via AWS Console
+AWS Console → Secrets Manager → Secrets → rds!cluster-xxxxx → Retrieve secret value
+
+# Via AWS CLI
+aws secretsmanager get-secret-value --secret-id rds!cluster-xxxxx --query SecretString --output text
+```
+
+**Why this is better than alternatives:**
+
+| Method                              | Security | Rotation  | Audit Trail      | Cost      | Selected |
+| ----------------------------------- | -------- | --------- | ---------------- | --------- | -------- |
+| **AWS Secrets Manager**             | High     | Automatic | Yes (CloudTrail) | ~$0.40/mo | ✅ Yes   |
+| terraform.tfvars (gitignored)       | Medium   | Manual    | No               | $0        | ❌ No    |
+| Hardcoded in code                   | Very Low | Manual    | No               | $0        | ❌ Never |
+| Environment variables               | Medium   | Manual    | No               | $0        | ❌ No    |
+| AWS Systems Manager Parameter Store | Medium   | Manual    | Yes              | $0        | ❌ No    |
+
+**Production best practice implemented:**
+
+- Password rotation can be enabled post-deployment (every 90 days recommended)
+- Integration with Lambda for zero-downtime rotation (uses MySQL `ALTER USER`)
+- CloudTrail audit logs for compliance reporting
+- Automatic password complexity validation
+
+**Discovery:** This was a hidden feature of the registry module, not documented in the README. Discovered when connection failed with password from `terraform.tfvars`, investigated AWS Console, found secret in Secrets Manager.
+
+---
+
+### Decision: Storage and Engine Configuration
+
+**Storage Type:** GP3
+
+**Why GP3 over GP2:**
+
+- Latest generation general-purpose SSD (released 2020)
+- 3,000 IOPS baseline (vs GP2's variable 100-16,000 IOPS based on size)
+- 125 MB/s throughput baseline (vs GP2's variable)
+- Lower cost: $0.08/GB-month (vs GP2's $0.10/GB-month)
+- Can independently scale IOPS and throughput if needed (GP2 cannot)
+
+**Storage sizing:**
+
+- Allocated: 20GB (free tier limit)
+- Max autoscaling: 100GB (prevents runaway costs)
+- Encryption: Enabled (AES-256, no performance penalty, no extra cost)
+
+**Engine:** MySQL 8.0
+
+**Why MySQL 8.0:**
+
+- Latest stable major version (8.0.35 at time of deployment)
+- Application codebase already uses MySQL (compatibility)
+- Modern features: JSON support, CTEs, window functions
+- Better performance than 5.7 (query optimizer improvements)
+
+**Character encoding:**
+
+- **Character set:** utf8mb4 (full 4-byte Unicode support including emojis 🎬🍿)
+- **Collation:** utf8mb4_unicode_ci (case-insensitive, language-aware sorting)
+- **Why utf8mb4 not utf8:** utf8 in MySQL is limited to 3 bytes (missing emoji, some Asian characters)
+
+**Why not other engines:**
+
+| Engine       | Pros                                         | Cons                                              | Decision    |
+| ------------ | -------------------------------------------- | ------------------------------------------------- | ----------- |
+| **MySQL**    | Application compatibility, mature, free tier | Limited features vs PostgreSQL                    | ✅ Selected |
+| PostgreSQL   | More features, better standards compliance   | Application rewrite needed                        | ❌ Rejected |
+| Aurora MySQL | Better performance, serverless option        | 20% more expensive, overkill for scale            | ❌ Rejected |
+| MariaDB      | MySQL fork, more features                    | Compatibility concerns, unknown long-term support | ❌ Rejected |
+
+---
+
+### Security Configuration
+
+**Network isolation:**
+
+- **Deployed in:** Private database subnets (10.0.21.0/24, 10.0.22.0/24)
+- **Public accessibility:** Disabled (cannot be reached from internet)
+- **Security group:** Allows MySQL (3306) only from backend security group
+
+**Access pattern:**
+
+```
+User → Frontend → ALB → Backend → RDS
+            ❌           ❌      ✅
+         (blocked)   (blocked) (allowed)
+
+Bastion → Backend → RDS
+   ❌        ✅       ✅
+(blocked) (allowed) (via backend)
+```
+
+**Key security principle: Defense in depth**
+
+1. **Network layer:** Private subnets (no internet gateway routing)
+2. **Security group layer:** Only backend-sg can access port 3306
+3. **IAM layer:** RDS uses service-linked role for AWS operations
+4. **Encryption layer:** Storage encrypted with AWS-managed KMS key
+
+**Why Bastion cannot access RDS directly:**
+
+- Separation of duties (Bastion is SSH jump host, not application server)
+- Reduces attack surface (even if Bastion compromised, database unreachable)
+- Forces all database access through application layer (audit trail)
+
+**Encryption:**
+
+- **Storage encryption:** Enabled (AES-256 at rest)
+- **Backup encryption:** Automatic (inherits storage encryption)
+- **Cost:** $0 (no additional charge for encryption)
+- **Compliance:** Required by PCI-DSS, HIPAA, SOC 2
+
+**Network flow for database query:**
+
+```
+Backend instance (10.0.11.183)
+    ↓ MySQL protocol (port 3306)
+VPC local routing (10.0.0.0/16)
+    ↓
+RDS Security Group check
+    ↓ Source: backend-sg? ✅ Allow
+RDS instance (10.0.21.x)
+```
+
+---
+
+### Cost Analysis
+
+**QA Environment (current deployment):**
+| Resource | Specification | Free Tier | Monthly Cost |
+|----------|---------------|-----------|--------------|
+| RDS Instance | db.t3.micro, Single-AZ | 750 hours | $0 |
+| Storage | 20GB GP3 | 20GB limit | $0 |
+| Backups | 20GB (1 day retention) | = storage size | $0 |
+| Secrets Manager | 1 secret | 30-day trial | $0.40 |
+| CloudWatch Logs | 3 log groups | 5GB/month | $0 |
+| Data transfer | <1GB | 100GB/month | $0 |
+| **Total** | | | **$0.40/month** |
+
+**Production Environment (when deployed):**
+| Resource | Specification | Cost |
+|----------|---------------|------|
+| RDS Instance | db.t3.micro, Multi-AZ (2 instances) | ~$13/month |
+| Storage | 20GB GP3 × 2 (primary + standby) | $0 (free tier) |
+| Backups | 20GB (7 days retention) | $0 (= storage) |
+| Enhanced Monitoring | 60-second intervals | $2.10/month |
+| Secrets Manager | 1 secret | $0.40/month |
+| CloudWatch Logs | 3 log groups | $0 (free tier) |
+| **Total** | | **~$15.50/month** |
+
+**Budget impact:** $46.50 over 3-month project (40% of $115 budget) - Justified by production-grade availability, monitoring, and disaster recovery capabilities.
+
+**Cost optimization decisions:**
+
+- Single-AZ in QA (save $13/month)
+- Basic monitoring in QA (save $2.10/month)
+- No Performance Insights (save $7/month in both envs)
+- GP3 instead of io1/io2 (save ~$50/month)
+- No read replicas (save $13+/month)
+
+---
+
+### DB Subnet Group Design
+
+**Configuration:**
+
+- **Name:** `qa-rds-subnet-group` (prod: `prod-rds-subnet-group`)
+- **Subnets:**
+  - database-subnet-1 (10.0.21.0/24, us-east-1a)
+  - database-subnet-2 (10.0.22.0/24, us-east-1b)
+
+**Why required:**
+
+- **AWS RDS requirement:** Minimum 2 subnets in different Availability Zones
+- **Even for Single-AZ:** Subnet group still needs 2+ subnets (AWS API requirement)
+- **Enables Multi-AZ:** RDS can place standby in different subnet automatically
+- **Failure domain isolation:** Primary and standby never in same AZ
+
+**Architecture benefit:**
+
+- QA is Single-AZ but subnet group spans 2 AZs
+- Promoting to Multi-AZ requires zero infrastructure changes
+- Just change `multi_az = true` and Terraform handles the rest
+
+**Resource structure:**
+
+```hcl
+resource "aws_db_subnet_group" "this" {
+  name_prefix = "${var.environment}-rds-subnet-group-"
+  subnet_ids  = var.database_subnet_ids  # Passed from networking module
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+```
+
+---
+
+### Dependencies
+
+**Depends on:**
+
+- VPC and networking module (database subnets, route tables)
+- Security module (RDS security group, backend security group for reference)
+- Compute module (backend instances for connectivity testing)
+
+**Required by:**
+
+- Backend application (needs database for data persistence)
+- Data migrations (schema creation via ORM)
+- Application health checks (database connectivity validation)
+
+---

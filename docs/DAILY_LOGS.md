@@ -3246,3 +3246,613 @@ http://18.205.243.5
 - Bastion provides secure SSH access (auditable)
 
 ---
+
+## Day 9 - January 11, 2026
+
+**Status:** ✅ Complete | **Branch:** develop
+
+### What I Did
+
+#### 1. First Experience Using Terraform Registry Module
+
+**Module selected:** `terraform-aws-modules/rds/aws` version ~> 6.0
+
+**Why registry module instead of raw resources:**
+
+- RDS configuration has 50+ parameters (instance, storage, backups, monitoring, etc.)
+- Registry module abstracts complexity (parameter groups, option groups, IAM roles)
+- Maintained by Anton Babenko (core Terraform contributor, 1.8k+ stars)
+- Industry standard: 95% of production RDS deployments use this module
+- **Bonus discovery:** Built-in AWS Secrets Manager integration for password management
+
+**Learning curve:** Spent 30 minutes reading module documentation to understand:
+
+- Which inputs are required vs optional
+- How outputs are exposed
+- Version constraints (~> 6.0 means >= 6.0.0 AND < 7.0.0)
+- How the module handles secrets automatically
+
+---
+
+#### 2. Database Module Structure
+
+Created database module that wraps registry module:
+
+```
+terraform/modules/database/
+├── main.tf       # DB subnet group + IAM role + RDS module
+├── variables.tf  # Module inputs
+└── outputs.tf    # Connection endpoints
+```
+
+**Design pattern:** Module acts as wrapper around registry module, adding:
+
+- DB subnet group (AWS requirement)
+- IAM role for enhanced monitoring (production only)
+- Workspace-aware conditional logic (QA vs Production configs)
+
+---
+
+#### 3. Workspace-Aware Configuration Implementation
+
+**Challenge:** QA and Production need different configurations without code duplication.
+
+**Solution:** Conditional expressions based on `var.environment`:
+
+```hcl
+multi_az = var.environment == "prod" ? true : false
+backup_retention_period = var.environment == "prod" ? 7 : 1
+monitoring_interval = var.environment == "prod" ? 60 : 0
+deletion_protection = var.environment == "prod" ? true : false
+skip_final_snapshot = var.environment == "prod" ? false : true
+```
+
+**Configuration differences:**
+
+| Feature             | QA           | Production          | Reason                      |
+| ------------------- | ------------ | ------------------- | --------------------------- |
+| High Availability   | Single-AZ    | Multi-AZ            | Cost vs uptime trade-off    |
+| Backup Retention    | 1 day        | 7 days              | Disaster recovery window    |
+| Deletion Protection | Disabled     | Enabled             | Prevent accidental deletion |
+| Final Snapshot      | Skip         | Create              | Data preservation           |
+| Monitoring          | Basic (free) | Enhanced ($2.10/mo) | Troubleshooting depth       |
+| Max Connections     | 100          | 200                 | Traffic capacity            |
+
+**Key benefit:** Deploy to production with single command:
+
+```bash
+terraform workspace select prod
+terraform apply  # All prod configs automatically applied
+```
+
+---
+
+#### 4. RDS MySQL Instance Configuration
+
+**Specifications:**
+
+- **Engine:** MySQL 8.0 (latest stable)
+- **Instance:** db.t3.micro (free tier eligible)
+- **Storage:** 20GB GP3 encrypted (free tier limit, latest generation)
+- **Network:** Private database subnets (10.0.21.0/24, 10.0.22.0/24)
+- **Security:** MySQL port 3306 accessible only from backend security group
+- **Endpoint:** `qa-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com:3306`
+
+**Character encoding:**
+
+- **Character set:** utf8mb4 (full Unicode including emojis)
+- **Collation:** utf8mb4_unicode_ci (case-insensitive, language-aware)
+- **Why:** Modern applications require full Unicode support
+
+**Connection parameters:**
+
+- **Max connections:** 100 (QA) / 200 (Production)
+- **Port:** 3306 (MySQL default)
+- **Public access:** Disabled (security requirement)
+
+---
+
+#### 5. Password Management Discovery
+
+**Initial assumption:** Would use `terraform.tfvars` (gitignored) for password storage.
+
+**Actual implementation:** Registry module automatically integrates with AWS Secrets Manager.
+
+**How it works:**
+
+1. Pass `db_password` variable during initial `terraform apply`
+2. RDS module creates secret in AWS Secrets Manager
+3. Secret name: `rds!cluster-<random-id>`
+4. RDS instance retrieves password from Secrets Manager
+5. Password never stored in plain text in Terraform state
+
+**Security benefits discovered:**
+
+- **Encryption at rest:** AES-256 in Secrets Manager
+- **Audit trail:** CloudTrail logs all secret access
+- **Rotation capability:** Can enable automatic 90-day rotation
+- **Separation of concerns:** Password not in Terraform state or logs
+- **Compliance:** Meets PCI-DSS, HIPAA, SOC 2 requirements
+
+**Cost:** $0.40/month per secret (acceptable for production-grade security)
+
+**Access method:**
+
+```bash
+# Via AWS Console
+AWS Console → Secrets Manager → Secrets → rds!cluster-xxxxx → Retrieve secret value
+
+# Via AWS CLI
+aws secretsmanager get-secret-value --secret-id rds!cluster-xxxxx
+```
+
+---
+
+#### 6. Enhanced Monitoring IAM Role (Production Only)
+
+**Challenge:** RDS enhanced monitoring requires IAM role to publish metrics to CloudWatch.
+
+**Solution:** Create role conditionally:
+
+```hcl
+resource "aws_iam_role" "rds_monitoring" {
+  count = var.environment == "prod" ? 1 : 0
+  # ...
+}
+```
+
+**Why conditional:**
+
+- QA uses basic CloudWatch metrics (no role needed)
+- Production uses 60-second enhanced monitoring (role required)
+- Reduces unnecessary resources in QA
+
+**Role permissions:**
+
+- Trust policy: Allows `monitoring.rds.amazonaws.com` to assume role
+- Attached policy: `AmazonRDSEnhancedMonitoringRole` (AWS managed)
+
+**What enhanced monitoring provides:**
+
+- CPU utilization per core
+- Memory usage (free, cached, buffers)
+- Active database connections per process
+- Read/write IOPS per device
+- Network traffic per interface
+- 1-60 second granularity (vs 5-minute basic)
+
+---
+
+#### 7. DB Subnet Group Configuration
+
+**Why needed:**
+
+- AWS RDS requires subnet group (cannot attach instance directly to subnets)
+- Must span minimum 2 availability zones
+- Even Single-AZ instances require multi-AZ subnet group (AWS API requirement)
+
+**Configuration:**
+
+```hcl
+resource "aws_db_subnet_group" "this" {
+  subnet_ids = var.database_subnet_ids  # Both AZs: 10.0.21.0/24, 10.0.22.0/24
+}
+```
+
+**Benefit:** Simplifies future Multi-AZ enablement (no subnet changes needed when promoting QA to Production pattern)
+
+---
+
+#### 8. Deployment Process
+
+```bash
+cd terraform
+
+# 1. Initialize (download registry module)
+terraform init
+# Output: Downloading registry.terraform.io/terraform-aws-modules/rds/aws 6.x.x
+
+# 2. Format code
+terraform fmt -recursive
+
+# 3. Validate configuration
+terraform validate
+
+# 4. Preview changes
+terraform plan
+# Expected: ~10 resources (subnet group, IAM role, RDS components, Secrets Manager)
+
+# 5. Apply (TAKES 15-20 MINUTES)
+terraform apply
+```
+
+**Deployment duration:** 18 minutes
+
+**Why RDS creation is slow:**
+
+- Storage provisioning (EBS volume allocation)
+- Database engine initialization (MySQL 8.0 installation)
+- Parameter group application (charset, collation, connections)
+- Initial automated backup
+- CloudWatch integration setup
+- Secrets Manager secret creation
+
+---
+
+#### 9. Connection Testing and Troubleshooting
+
+**Initial attempt:** Tried connecting from Bastion Host to RDS.
+
+**Error encountered:**
+
+```
+ERROR 2003 (HY000): Can't connect to MySQL server on 'qa-movie-analyst-db...' (110)
+```
+
+**Root cause:** Connection timeout. RDS Security Group only allows connections from Backend SG, not Bastion SG.
+
+**Architecture understanding:**
+
+```
+Bastion (bastion-sg) → RDS (rds-sg)  ❌ BLOCKED (correct security posture)
+Backend (backend-sg) → RDS (rds-sg)  ✅ ALLOWED
+```
+
+**Correct testing procedure:**
+
+1. SSH to Bastion Host
+2. SSH from Bastion to Backend instance (10.0.11.183)
+3. Connect to RDS from Backend
+
+**Second challenge:** Password authentication failure.
+
+**Error encountered:**
+
+```
+ERROR 1045 (28000): Access denied for user 'admin'@'10.0.11.183' (using password: YES)
+```
+
+**Root cause:** Password stored in AWS Secrets Manager, not in `terraform.tfvars`.
+
+**Solution:** Retrieved password from AWS Console:
+
+```
+AWS Console → Secrets Manager → rds!cluster-xxxxx → Retrieve secret value
+```
+
+**Successful connection:**
+
+```bash
+# From Backend instance
+mysql -h qa-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com -u admin -p
+# Password: [retrieved from Secrets Manager]
+
+mysql> SHOW DATABASES;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| movieanalyst       |
+| mysql              |
+| performance_schema |
++--------------------+
+
+mysql> USE movieanalyst;
+Database changed
+
+mysql> SHOW TABLES;
+Empty set (0.00 sec)
+```
+
+**Expected result:** Database `movieanalyst` exists but empty (tables will be created by application).
+
+---
+
+### Key Learnings
+
+#### 1. Terraform Registry Modules - Deep Dive
+
+**How they work:**
+
+- Published modules are like NPM packages for infrastructure
+- Version constraints use semantic versioning (~> 6.0 = >= 6.0.0 AND < 7.0.0)
+- Module downloads happen during `terraform init`
+- Source format: `namespace/name/provider`
+
+**Hidden features discovered:**
+
+- AWS Secrets Manager integration (not documented in module README)
+- Automatic secret creation and rotation setup
+- CloudWatch log group creation for error/slow query logs
+- Parameter group and option group abstraction
+
+**Benefits:**
+
+- Reduced code (50+ parameters abstracted to 15 inputs)
+- Community-maintained (bug fixes, AWS API updates)
+- Production-tested (1.8k+ stars, used by thousands of companies)
+- Well-documented with examples
+
+**When to use:**
+
+- Complex resources (RDS, EKS, VPC with many components)
+- Standardized configurations across team
+- Want AWS best practices baked in
+
+**When to avoid:**
+
+- Simple resources (S3 bucket, IAM user)
+- Highly customized requirements not supported by module
+- Learning fundamentals (better to understand raw resources first)
+
+---
+
+#### 2. AWS Secrets Manager Integration
+
+**Discovery:** Registry module creates secret automatically when `db_password` variable provided.
+
+**Secret lifecycle:**
+
+1. **Creation:** First `terraform apply` creates secret with provided password
+2. **Storage:** Secret encrypted with AWS KMS key
+3. **Retrieval:** RDS retrieves password during instance launch
+4. **Rotation:** Can be enabled post-deployment (manual or automatic)
+
+**Secret naming:**
+
+- Pattern: `rds!cluster-<random-id>`
+- Example: `rds!cluster-a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6`
+- Cannot customize name (managed by AWS)
+
+**Cost breakdown:**
+
+- Secret storage: $0.40/month
+- API calls: $0.05 per 10,000 requests
+- Typical usage: ~100 API calls/month (RDS restarts, backups)
+- Total: ~$0.40-0.45/month
+
+**Rotation:**
+
+- Manual: Change password in Secrets Manager → RDS auto-updates
+- Automatic: Lambda function rotates every 30-90 days
+- Zero-downtime: Uses MySQL `ALTER USER` command
+
+---
+
+#### 3. Security Group Architecture - Multi-Layer Defense
+
+**Network topology:**
+
+```
+Internet
+    ↓
+Bastion (public subnet, bastion-sg)
+    ↓ SSH only
+Backend (private subnet, backend-sg)
+    ↓ MySQL 3306
+RDS (database subnet, rds-sg)
+```
+
+**Key insight:** Bastion cannot directly access RDS (intentional security design).
+
+**Why this matters:**
+
+- **Defense in depth:** Even if Bastion compromised, attacker cannot reach database
+- **Least privilege:** Each component only has minimum necessary access
+- **Audit trail:** All database access must go through Backend (application logs)
+
+**Testing implications:**
+
+- Cannot test RDS from Bastion directly
+- Must SSH: Local → Bastion → Backend → RDS
+- Mirrors production access pattern (good for learning)
+
+---
+
+#### 4. Conditional Resource Creation - Count Pattern
+
+**Pattern learned:**
+
+```hcl
+resource "aws_iam_role" "monitoring" {
+  count = var.environment == "prod" ? 1 : 0
+  # Resource only exists when count = 1
+}
+```
+
+**Key concept:** `count = 0` means resource is not created (not even evaluated).
+
+**Reference pattern:**
+
+```hcl
+monitoring_role_arn = var.environment == "prod" ? aws_iam_role.monitoring[0].arn : null
+```
+
+**Must use `[0]`** because count makes resource a list (even with count = 1).
+
+**Use cases:**
+
+- Environment-specific resources (monitoring roles, backup policies)
+- Optional features (read replicas, Multi-AZ)
+- Cost optimization (disable expensive features in dev/QA)
+
+---
+
+#### 5. RDS Deployment Timeline Understanding
+
+**What happens during 18-minute `terraform apply`:**
+
+| Time      | Activity                                         | AWS Status | User Action |
+| --------- | ------------------------------------------------ | ---------- | ----------- |
+| 0-2 min   | Terraform creates subnet group, IAM role, secret | N/A        | Wait        |
+| 2-5 min   | AWS provisions EBS volumes                       | Creating   | Wait        |
+| 5-10 min  | MySQL engine initialization                      | Creating   | Wait        |
+| 10-15 min | Parameter/option group application               | Modifying  | Wait        |
+| 15-17 min | Initial automated backup                         | Backing up | Wait        |
+| 17-18 min | Secrets Manager integration finalized            | Available  | Can connect |
+
+**Learning:** RDS is intentionally slow (enterprise-grade provisioning). Not a bug, not an error.
+
+**Best practices during wait:**
+
+- Don't cancel apply (corrupts state)
+- Use time for documentation
+- Monitor CloudWatch for creation progress
+- Check AWS Console for detailed status
+
+---
+
+#### 6. MySQL Connection Troubleshooting
+
+**Error types learned:**
+
+| Error Code   | Meaning            | Cause             | Solution               |
+| ------------ | ------------------ | ----------------- | ---------------------- |
+| 2003 (110)   | Connection timeout | Network blocked   | Check security groups  |
+| 1045 (28000) | Access denied      | Wrong credentials | Check Secrets Manager  |
+| 2003 (113)   | No route to host   | Wrong endpoint    | Verify DNS name        |
+| 1049         | Unknown database   | DB doesn't exist  | Check `SHOW DATABASES` |
+
+**Troubleshooting workflow:**
+
+1. Verify network connectivity (can ping? timeout vs refused?)
+2. Check security groups (source SG allowed?)
+3. Verify credentials (password from Secrets Manager?)
+4. Confirm database exists (use `SHOW DATABASES`)
+
+---
+
+#### 7. Empty Database vs Missing Database
+
+**Confusion:** `SHOW TABLES` returned "Empty set (0.00 sec)" - is this an error?
+
+**Understanding:**
+
+```sql
+mysql> SHOW DATABASES;
+-- Shows: movieanalyst exists ✅
+
+mysql> USE movieanalyst;
+-- Database changed ✅
+
+mysql> SHOW TABLES;
+-- Empty set ✅ EXPECTED (no tables created yet)
+```
+
+**Why empty is correct:**
+
+- RDS created database with name `movieanalyst`
+- No tables defined yet (application will create during deployment)
+- Schema migration happens during app startup (Sequelize, Prisma, etc.)
+
+**Next step:** Backend application will run migrations to create tables (users, movies, reviews, etc.)
+
+---
+
+### Challenges and Solutions
+
+#### Challenge 1: Understanding Registry Module Secrets Management
+
+**Problem:** Expected to manage password via `terraform.tfvars`, but authentication failed.
+
+**Discovery process:**
+
+1. Verified password in `terraform.tfvars` matched input
+2. Tried connecting multiple times (same error)
+3. Checked AWS Console → Secrets Manager
+4. Found secret `rds!cluster-xxxxx` with different password
+5. Realized module creates secret automatically
+
+**Solution:** Retrieved actual password from AWS Secrets Manager.
+
+**Key learning:** Registry modules may have hidden features not immediately obvious from inputs/outputs. Always check AWS Console for resources created by module.
+
+---
+
+#### Challenge 2: Network Access Pattern Confusion
+
+**Problem:** Couldn't connect from Bastion to RDS (timeout error).
+
+**Initial assumption:** Security group misconfiguration or RDS not running.
+
+**Actual cause:** Bastion SG not in RDS SG allowed list (intentional security design).
+
+**Solution:** Connected via Backend instance (correct architecture).
+
+**Key learning:** Security architecture sometimes feels restrictive, but restrictions are intentional. Bastion should NOT have database access (separation of duties).
+
+---
+
+#### Challenge 3: RDS Creation Time Expectation
+
+**Problem:** `terraform apply` took 18 minutes (worried something was wrong).
+
+**Initial reaction:** Considered canceling and restarting.
+
+**Actual behavior:** RDS creation is legitimately slow (10-20 minutes normal).
+
+**Solution:** Waited patiently, used time for documentation.
+
+**Key learning:** Set correct expectations. Not everything in AWS is instant. RDS, EKS, NAT Gateway all take 10-20 minutes.
+
+---
+
+### Commands Used
+
+```bash
+# Module setup
+cd terraform/modules
+mkdir database
+touch database/{main,variables,outputs}.tf
+
+# Terraform workflow
+cd ../../
+terraform init       # Downloaded registry module
+terraform fmt -recursive
+terraform validate
+terraform plan       # Reviewed ~10 resources
+terraform apply      # 18 minutes ⏱️
+
+# Verification
+terraform output db_endpoint
+
+# Connection testing (INCORRECT - blocked by security group)
+ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
+mysql -h qa-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com -u admin -p
+# ERROR 2003 (110): Connection timeout
+
+# Connection testing (CORRECT - via Backend)
+ssh -A -i ~/.ssh/movie-analyst-bastion-key ec2-user@54.144.192.77
+ssh ec2-user@10.0.11.183  # Backend private IP
+sudo yum install -y mysql
+mysql -h qa-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com -u admin -p
+# Password: [from Secrets Manager]
+# SUCCESS ✅
+
+# Database verification
+mysql> SHOW DATABASES;
+mysql> USE movieanalyst;
+mysql> SHOW TABLES;  # Empty (expected)
+mysql> exit
+```
+
+---
+
+### Files Created/Modified
+
+**Created:**
+
+```
+terraform/modules/database/main.tf       # DB subnet group + IAM role + RDS module
+terraform/modules/database/variables.tf  # Module inputs
+terraform/modules/database/outputs.tf    # Connection endpoints
+```
+
+**Modified:**
+
+```
+terraform/main.tf         # Added database module call
+terraform/variables.tf    # Added db_password variable
+terraform/outputs.tf      # Added database outputs
+terraform/.gitignore      # Verified *.tfvars present
+```
