@@ -1464,7 +1464,7 @@ mkdir -p /opt/movie-analyst
 AWS provides two levels of EC2 monitoring: Basic (5-minute intervals, free) and Detailed (1-minute intervals, $2.10/instance/month).
 
 **Decision:**  
-Enable detailed monitoring for learning and troubleshooting purposes.
+Enable detailed monitoring for troubleshooting purposes (Production only).
 
 **Implementation:**
 
@@ -1856,16 +1856,6 @@ Use AWS Secrets Manager for password storage (automatic feature of registry modu
 - Secret storage: $0.40/month per secret
 - API calls: $0.05 per 10,000 requests
 - Typical monthly cost: ~$0.40-0.45 (RDS makes ~100 API calls/month)
-
-**Initial setup:**
-
-```hcl
-# terraform.tfvars (used only during initial apply)
-db_password = "SecurePassword123!"
-
-# After deployment, password stored in:
-# AWS Secrets Manager → rds!cluster-a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6
-```
 
 **Accessing password:**
 
