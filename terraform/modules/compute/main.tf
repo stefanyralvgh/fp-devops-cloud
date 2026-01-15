@@ -229,6 +229,7 @@ resource "aws_instance" "frontend" {
               <!DOCTYPE html>
               <html>
               <head>
+                  <meta charset="UTF-8">
                   <title>Movie Analyst - Frontend ${count.index + 1}</title>
                   <style>
                       body {
