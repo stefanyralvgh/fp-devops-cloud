@@ -12,7 +12,7 @@ outputs.txt
 
 # Ansible
 *.retry
-ansible.cfg
+ansible/*.log
 
 # AWS
 *.pem
@@ -41,7 +41,4 @@ scripts/*.log
 scripts/.env
 
 
-# Ansible
-*.retry
-ansible/*.log
 
