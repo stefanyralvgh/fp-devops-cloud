@@ -2,17 +2,6 @@
 # Common role - System baseline configuration
 # This role prepares all instances with baseline software and settings
 
-- name: Ensure Python 3 is installed (bootstrap)
-  raw: test -e /usr/bin/python3 || yum install -y python3
-  changed_when: false
-  check_mode: no
-  tags: bootstrap
-
-- name: Set Python 3 as interpreter for Ansible
-  set_fact:
-    ansible_python_interpreter: /usr/bin/python3
-  tags: bootstrap
-
 - name: Update all packages to latest version
   yum:
     name: '*'
