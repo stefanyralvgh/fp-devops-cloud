@@ -1,0 +1,15 @@
+---
+# Playbook to apply common role to backend instances
+# Usage: ansible-playbook playbooks/common.yml
+
+- name: Configure baseline system settings
+  hosts: backend
+  become: yes  # Run tasks as root (sudo)
+  
+  roles:
+    - common
+  
+  post_tasks:
+    - name: Display completion message
+      debug:
+        msg: "Common role applied successfully to {{ inventory_hostname }}"

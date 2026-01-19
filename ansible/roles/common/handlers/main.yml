@@ -1,0 +1,8 @@
+---
+# Handlers for common role
+# Handlers are triggered by 'notify' in tasks
+
+- name: restart chronyd
+  systemd:
+    name: chronyd
+    state: restarted

@@ -1,0 +1,43 @@
+---
+# Common role - System baseline configuration
+# This role prepares all instances with baseline software and settings
+
+- name: Update all packages to latest version
+  yum:
+    name: '*'
+    state: latest
+    update_cache: yes
+  tags: packages
+
+- name: Install base development tools
+  yum:
+    name:
+      - git
+      - wget
+      - curl
+      - vim
+      - unzip
+      - tar
+      - tree
+    state: present
+  tags: packages
+
+- name: Install Python 3 and pip
+  yum:
+    name:
+      - python3
+      - python3-pip
+    state: present
+  tags: packages
+
+- name: Set timezone to America/Bogota
+  timezone:
+    name: America/Bogota
+  tags: system
+
+- name: Ensure NTP is installed and running
+  systemd:
+    name: chronyd
+    state: started
+    enabled: yes
+  tags: system
