@@ -2,9 +2,8 @@
 # Common role - System baseline configuration
 # Bootstrap + baseline configuration for Amazon Linux 2
 
-########################################
+
 # Bootstrap phase (no Python dependency)
-########################################
 
 - name: Bootstrap Python dependencies for Ansible
   raw: yum install -y python3 python3-pip python3-libselinux python3-rpm
@@ -15,9 +14,8 @@
   setup:
   tags: bootstrap
 
-########################################
+
 # System baseline (declarative)
-########################################
 
 - name: Update all packages to latest version
   package:

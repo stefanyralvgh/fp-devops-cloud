@@ -7,7 +7,7 @@
     name: chronyd
     state: restarted
 
-    ---
+
 # Handlers for common role
 
 - name: restart chronyd
