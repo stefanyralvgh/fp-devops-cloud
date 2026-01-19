@@ -1,9 +1,13 @@
 ---
 # Common role - System baseline configuration
-# This role prepares all instances with baseline software and settings
+# Bootstrap + baseline configuration for Amazon Linux 2
 
-- name: Install Python 3 dependencies for package management
-  raw: yum install -y python3-libselinux python3-pip python3 python2-rpm-macros || true
+########################################
+# Bootstrap phase (no Python dependency)
+########################################
+
+- name: Bootstrap Python dependencies for Ansible
+  raw: yum install -y python3 python3-pip python3-libselinux python3-rpm
   changed_when: false
   tags: bootstrap
 
@@ -11,24 +15,35 @@
   setup:
   tags: bootstrap
 
+########################################
+# System baseline (declarative)
+########################################
+
 - name: Update all packages to latest version
-  shell: yum update -y
-  args:
-    warn: false
+  package:
+    name: "*"
+    state: latest
   tags: packages
-  register: yum_update
-  changed_when: "'Nothing to do' not in yum_update.stdout"
 
 - name: Install base development tools
-  shell: yum install -y git wget curl vim unzip tar tree
-  args:
-    warn: false
+  package:
+    name:
+      - git
+      - wget
+      - curl
+      - vim
+      - unzip
+      - tar
+      - tree
+    state: present
   tags: packages
 
-- name: Install Python 3 and pip
-  shell: yum install -y python3 python3-pip
-  args:
-    warn: false
+- name: Ensure Python 3 and pip are installed
+  package:
+    name:
+      - python3
+      - python3-pip
+    state: present
   tags: packages
 
 - name: Set timezone to America/Bogota
@@ -40,5 +55,5 @@
   systemd:
     name: chronyd
     state: started
-    enabled: yes
+    enabled: true
   tags: system
