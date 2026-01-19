@@ -2,15 +2,15 @@
 # Common role - System baseline configuration
 # This role prepares all instances with baseline software and settings
 
-- name: Update all packages to latest version
-  package:
+- name: Update all dnfs to latest version
+  dnf:
     name: '*'
     state: latest
     update_cache: yes
-  tags: packages
+  tags: dnfs
 
 - name: Install base development tools
-  package:
+  dnf:
     name:
       - git
       - wget
@@ -20,15 +20,15 @@
       - tar
       - tree
     state: present
-  tags: packages
+  tags: dnfs
 
 - name: Install Python 3 and pip
-  package:
+  dnf:
     name:
       - python3
       - python3-pip
     state: present
-  tags: packages
+  tags: dnfs
 
 - name: Set timezone to America/Bogota
   timezone:
