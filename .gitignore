@@ -39,3 +39,9 @@ keys/
 # Scripts logs
 scripts/*.log
 scripts/.env
+
+
+# Ansible
+*.retry
+ansible/*.log
+
