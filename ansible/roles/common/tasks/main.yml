@@ -2,12 +2,19 @@
 # Common role - System baseline configuration
 # This role prepares all instances with baseline software and settings
 
-- name: Update all dnfs to latest version
+- name: Bootstrap python3-dnf for Ansible
+  raw: dnf install -y python3-dnf
+  args:
+    creates: /usr/lib/python3*/site-packages/dnf
+  changed_when: false
+  tags: bootstrap
+
+- name: Update all packages to latest version
   dnf:
     name: '*'
     state: latest
     update_cache: yes
-  tags: dnfs
+  tags: packages
 
 - name: Install base development tools
   dnf:
@@ -20,7 +27,7 @@
       - tar
       - tree
     state: present
-  tags: dnfs
+  tags: packages
 
 - name: Install Python 3 and pip
   dnf:
@@ -28,7 +35,7 @@
       - python3
       - python3-pip
     state: present
-  tags: dnfs
+  tags: packages
 
 - name: Set timezone to America/Bogota
   timezone:
