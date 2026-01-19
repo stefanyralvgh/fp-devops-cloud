@@ -2,37 +2,33 @@
 # Common role - System baseline configuration
 # This role prepares all instances with baseline software and settings
 
-- name: Install Python 3 SELinux bindings (required for yum module)
-  raw: yum install -y python3-libselinux python3-pip
+- name: Install Python 3 dependencies for package management
+  raw: yum install -y python3-libselinux python3-pip python3 python2-rpm-macros || true
   changed_when: false
   tags: bootstrap
 
+- name: Gather facts after bootstrap
+  setup:
+  tags: bootstrap
+
 - name: Update all packages to latest version
-  yum:
-    name: '*'
-    state: latest
-    update_cache: yes
+  shell: yum update -y
+  args:
+    warn: false
   tags: packages
+  register: yum_update
+  changed_when: "'Nothing to do' not in yum_update.stdout"
 
 - name: Install base development tools
-  yum:
-    name:
-      - git
-      - wget
-      - curl
-      - vim
-      - unzip
-      - tar
-      - tree
-    state: present
+  shell: yum install -y git wget curl vim unzip tar tree
+  args:
+    warn: false
   tags: packages
 
 - name: Install Python 3 and pip
-  yum:
-    name:
-      - python3
-      - python3-pip
-    state: present
+  shell: yum install -y python3 python3-pip
+  args:
+    warn: false
   tags: packages
 
 - name: Set timezone to America/Bogota
