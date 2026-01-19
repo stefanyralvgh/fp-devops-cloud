@@ -3,7 +3,7 @@
 # This role prepares all instances with baseline software and settings
 
 - name: Update all packages to latest version
-  yum:
+  package:
     name: '*'
     state: latest
     update_cache: yes
