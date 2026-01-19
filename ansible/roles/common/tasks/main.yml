@@ -2,6 +2,11 @@
 # Common role - System baseline configuration
 # This role prepares all instances with baseline software and settings
 
+- name: Install Python 3 SELinux bindings (required for yum module)
+  raw: yum install -y python3-libselinux python3-pip
+  changed_when: false
+  tags: bootstrap
+
 - name: Update all packages to latest version
   yum:
     name: '*'
