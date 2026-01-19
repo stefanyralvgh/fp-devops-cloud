@@ -2564,3 +2564,451 @@ Total: ~$22-28/month
 - [ ] Sticky sessions (if needed)
 
 ---
+## Configuration Management - Ansible
+
+### Decision: Ansible as Configuration Management Tool
+
+**Context:**  
+Infrastructure created by Terraform requires software installation and configuration. Manual SSH configuration is error-prone, not repeatable, and doesn't scale.
+
+**Decision:**  
+Use Ansible for all post-provisioning configuration and application deployment.
+
+**Justification:**
+
+**Ansible advantages:**
+- Agentless (no software on managed nodes beyond Python and SSH)
+- Declarative YAML syntax (infrastructure as code)
+- Idempotent operations (safe to re-run)
+- Large module ecosystem (yum, systemd, template, etc.)
+- Strong community and documentation
+
+**Alternatives considered:**
+
+| Tool | Pros | Cons | Selected |
+|------|------|------|----------|
+| **Ansible** | Agentless, simple, idempotent | Slower than alternatives | ✅ Yes |
+| Chef | Fast, Ruby DSL | Requires agent, complex | ❌ No |
+| Puppet | Mature, enterprise features | Requires agent, steep learning curve | ❌ No |
+| Salt | Fast, scalable | Requires agent, less common | ❌ No |
+| Shell scripts | Simple, no dependencies | Not idempotent, error-prone | ❌ No |
+
+**Why not shell scripts:**
+- No idempotency (running twice causes problems)
+- No error handling
+- Hard to maintain
+- Not self-documenting
+
+---
+
+### Decision: Ansible Control Node Location
+
+**Context:**  
+Ansible can run from:
+1. Local developer machine (laptop)
+2. Dedicated Ansible server
+3. Bastion host
+
+**Decision:**  
+Run Ansible from Bastion Host.
+
+**Architecture:**
+```
+Developer Laptop → SSH → Bastion (Ansible Control Node) → Backend Instances
+```
+
+**Justification:**
+
+**Bastion as control node advantages:**
+- Already has Ansible installed (from Day 6 setup)
+- Direct network access to private subnets (no SSH proxying needed)
+- Simpler inventory configuration
+- More realistic production pattern
+- Better performance (single SSH hop instead of proxy)
+- Ansible key management contained within AWS
+
+**Alternatives considered:**
+
+| Location | Pros | Cons | Selected |
+|----------|------|------|----------|
+| **Bastion** | Simple, realistic, already configured | Requires Git setup | ✅ Yes |
+| Local machine | Familiar workflow | Requires Ansible on Windows, complex SSH proxy | ❌ No |
+| Dedicated server | Production-grade | Unnecessary for learning project, additional cost | ❌ No |
+
+**Trade-offs accepted:**
+- Repository must be cloned to Bastion
+- Changes committed from Bastion (or pushed from local)
+- Bastion becomes slight SPF (but acceptable for QA)
+
+**Why local machine was rejected:**
+- Installing Ansible on Windows requires WSL or Git Bash with Python
+- Inventory would need ProxyCommand for SSH jumping:
+```ini
+  ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p ec2-user@BASTION_IP"'
+```
+- More complex, less realistic
+- Additional maintenance burden
+
+---
+
+### Decision: Inventory Organization
+
+**Context:**  
+Ansible requires inventory file defining managed hosts. Two formats available: INI and YAML.
+
+**Decision:**  
+Use INI format with separate files per environment.
+
+**Implementation:**
+
+**File structure:**
+```
+ansible/inventory/
+├── qa.ini
+└── prod.ini
+```
+
+**QA inventory:**
+```ini
+[backend]
+backend-1 ansible_host=10.0.11.71
+backend-2 ansible_host=10.0.12.244
+
+[backend:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=~/.ssh/movie-analyst-bastion-key
+ansible_python_interpreter=/usr/bin/python3
+```
+
+**Key decisions:**
+- **Private IPs:** Backend instances in private subnets
+- **No ProxyCommand:** Not needed when running from Bastion
+- **Python 3:** Amazon Linux 2 default (Ansible requires Python on targets)
+- **Group variables:** Applied to all hosts in group
+
+**Alternatives considered:**
+
+| Format | Pros | Cons | Selected |
+|--------|------|------|----------|
+| **INI** | Simple, readable, standard | Less flexible than YAML | ✅ Yes |
+| YAML | More features, nested structures | Overkill for simple inventory | ❌ No |
+| Dynamic inventory | Auto-discovers EC2 instances | Complex setup, not needed | ❌ No |
+
+**Why not dynamic inventory:**
+- EC2 plugin requires AWS credentials and boto3
+- Adds complexity without benefit (only 2 instances)
+- Static inventory more predictable for learning
+- Valid for production with many instances
+
+---
+
+### Decision: Role Structure
+
+**Context:**  
+Ansible roles organize related tasks, handlers, templates, and variables into reusable units.
+
+**Decision:**  
+Implement modular role-based organization:
+```
+roles/
+├── common/       # Baseline configuration (all instances)
+├── nodejs/       # Node.js + PM2 (backend instances)
+└── nginx/        # Nginx (frontend instances)
+```
+
+**Common role responsibilities:**
+- System updates and security patches
+- Base tool installation (git, vim, curl, etc.)
+- Timezone configuration
+- NTP time synchronization
+- SSH hardening
+- Custom MOTD banner
+
+**Justification:**
+
+**Role-based advantages:**
+- **Reusability:** Common role applies to frontend, backend, database
+- **Maintainability:** Changes to baseline config in one place
+- **Clarity:** Each role has single responsibility
+- **Testing:** Roles can be tested independently
+- **Portability:** Roles can be shared across projects
+
+**Directory structure:**
+```
+roles/common/
+├── README.md         # Role documentation
+├── defaults/         # Default variables (lowest priority)
+├── handlers/         # Service restart handlers
+├── tasks/            # Main task list
+└── templates/        # Jinja2 config templates
+```
+
+**Alternative (flat playbooks):**
+```yaml
+# Anti-pattern: Everything in one playbook
+- name: Configure everything
+  tasks:
+    - yum: ...
+    - copy: ...
+    - service: ...
+    # 100+ tasks, impossible to maintain
+```
+
+**Why roles are better:**
+- Logical separation
+- Can selectively apply (only nodejs to backend)
+- Easier collaboration (different team members own different roles)
+
+---
+
+### Decision: Ansible Version and Python
+
+**Context:**  
+Encountered critical bug with Ansible 2.9 and package modules.
+
+**Problem:**
+```
+The Python 2 bindings for rpm are needed for this module
+```
+
+**Root cause:**
+- Bastion had Ansible 2.9 (installed via amazon-linux-extras)
+- Ansible 2.9 is EOL (end of life)
+- Known bugs when control node uses Python 2, targets use Python 3
+
+**Decision:**  
+Upgrade to Ansible 2.11+ using pip3.
+
+**Implementation:**
+```bash
+# Remove legacy version
+sudo yum remove -y ansible
+
+# Install modern version
+sudo pip3 install ansible
+
+# Verify
+ansible --version
+# ansible-core 2.11.12
+# python version = 3.7.16
+```
+
+**Result:**
+- All package modules working correctly
+- Idempotency restored
+- No workarounds needed
+
+**Lesson learned:**
+- Always use supported Ansible versions (2.11+)
+- Avoid EOL software (security and bug risks)
+- Don't settle for workarounds (shell instead of package)
+- Control node and managed nodes should use same Python major version
+
+**Why shell workaround was rejected:**
+```yaml
+# This works but is WRONG:
+- name: Update packages
+  shell: yum update -y
+```
+
+**Problems with shell:**
+- Not idempotent (always shows changed)
+- No error handling
+- Not declarative
+- Defeats purpose of Ansible
+
+---
+
+### Decision: Security Hardening in Common Role
+
+**Context:**  
+SSH is the only way to access instances. Default configurations have security weaknesses.
+
+**Decision:**  
+Implement SSH hardening in common role.
+
+**Implementation:**
+
+**Changes to /etc/ssh/sshd_config:**
+1. `PermitRootLogin no` - Disable root login
+2. `PasswordAuthentication no` - Keys only (no passwords)
+
+**Justification:**
+
+**Disable root login:**
+- Root has unlimited privileges
+- Attackers target root account
+- Better: Use ec2-user + sudo
+
+**Disable password authentication:**
+- Passwords vulnerable to brute force
+- Keys cryptographically stronger
+- Keys can be rotated without changing password on every server
+- Industry standard for cloud servers
+
+**Handler for changes:**
+```yaml
+- name: restart sshd
+  systemd:
+    name: sshd
+    state: restarted
+```
+
+**Why handler:**
+- SSH config changes require service restart
+- Handler runs only if config actually changed
+- Runs at end of playbook (not mid-execution, avoiding lockout)
+
+**Risk mitigation:**
+- Always test SSH key access BEFORE disabling passwords
+- Keep current SSH session open while testing
+- If locked out: Use AWS Systems Manager Session Manager as backup
+
+---
+
+### Decision: MOTD Custom Banner
+
+**Context:**  
+When SSHing to servers, useful to immediately see which server you're on.
+
+**Decision:**  
+Implement dynamic MOTD (Message of the Day) using Jinja2 template.
+
+**Implementation:**
+
+**Template:** `roles/common/templates/motd.j2`
+```jinja2
+=====================================
+   Movie Analyst Backend Server
+   Environment: {{ ansible_hostname }}
+   IP: {{ ansible_default_ipv4.address }}
+   Last Update: {{ ansible_date_time.iso8601 }}
+=====================================
+
+NOTICE: Unauthorized access prohibited
+Managed by Ansible - Do not modify manually
+```
+
+**Variables used:**
+- `ansible_hostname`: Auto-discovered during fact gathering
+- `ansible_default_ipv4.address`: Primary IP address
+- `ansible_date_time.iso8601`: Timestamp of last Ansible run
+
+**Task:**
+```yaml
+- name: Set custom MOTD banner
+  template:
+    src: motd.j2
+    dest: /etc/motd
+    mode: '0644'
+```
+
+**Benefits:**
+- Immediate server identification
+- Shows when Ansible last ran
+- Reminds not to make manual changes
+- Professional appearance
+
+**Alternative (static file):**
+```yaml
+- name: Copy static MOTD
+  copy:
+    content: "Movie Analyst Backend"
+    dest: /etc/motd
+```
+
+**Why template is better:**
+- Dynamic (shows actual hostname and IP)
+- Updates automatically on each run
+- More informative
+
+---
+
+### Decision: Tagging Strategy
+
+**Context:**  
+Playbooks can have many tasks. Sometimes you want to run subset.
+
+**Decision:**  
+Implement meaningful tags for selective execution.
+
+**Tags implemented:**
+- `packages`: Package installation and updates
+- `system`: System configuration (timezone, NTP)
+- `security`: Security hardening (SSH config)
+
+**Usage examples:**
+```bash
+# Run only security tasks
+ansible-playbook playbooks/common.yml --tags security
+
+# Skip lengthy package updates during testing
+ansible-playbook playbooks/common.yml --skip-tags packages
+
+# Multiple tags
+ansible-playbook playbooks/common.yml --tags "system,security"
+```
+
+**Benefits:**
+- Faster iteration during development
+- Production hotfixes (skip non-critical tasks)
+- Testing specific changes
+- Clearer task organization
+
+**Best practices:**
+- Use descriptive tag names
+- Tag at task level, not play level
+- Document available tags in role README
+- Don't overuse (3-5 tags per role maximum)
+
+---
+
+### Cost Optimization
+
+**Ansible-related costs:**
+- **Ansible software:** Free (open source)
+- **Bastion instance:** Already running (t3.micro, free tier)
+- **Additional storage:** Minimal (~100MB for Ansible + roles)
+- **Network transfer:** Negligible (configuration files are small)
+
+**Total additional cost:** $0
+
+---
+
+### Production Considerations
+
+**For production deployment, would implement:**
+
+1. **Ansible Tower/AWX:**
+   - Web UI for playbook execution
+   - Role-based access control
+   - Job scheduling
+   - Audit logs
+
+2. **Ansible Vault:**
+   - Encrypt sensitive variables (passwords, API keys)
+   - Encrypted at rest in Git
+   - Decrypted only during playbook execution
+
+3. **Dynamic Inventory:**
+   - Auto-discover EC2 instances via AWS API
+   - Tag-based filtering
+   - No manual IP management
+
+4. **Separate Ansible server:**
+   - Dedicated instance (not Bastion)
+   - High availability (multi-AZ)
+   - Locked down (minimal access)
+
+5. **CI/CD Integration:**
+   - Ansible triggered by GitLab CI / GitHub Actions
+   - Automated testing (ansible-lint, molecule)
+   - Change approval workflow
+
+**Why not implemented for learning project:**
+- Adds complexity without educational value
+- Increases cost
+- Overkill for 2-instance environment
+- Current approach demonstrates core concepts
+
+---
