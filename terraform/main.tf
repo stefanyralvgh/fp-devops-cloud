@@ -62,7 +62,7 @@ module "compute" {
   backend_instance_count = 2
 
   # Database configuration
-  db_master_secret_arn   = module.database.db_master_secret_arn
+  db_master_secret_arn = module.database.db_master_secret_arn
 
   # Frontend configuration
   frontend_instance_count = 2

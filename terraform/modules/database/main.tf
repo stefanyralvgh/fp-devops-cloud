@@ -67,11 +67,11 @@ module "rds" {
   storage_type          = "gp3"
 
   # Database credentials
-  db_name  = var.db_name
-  username = var.db_username
+  db_name                     = var.db_name
+  username                    = var.db_username
   manage_master_user_password = true
 
-  port     = 3306
+  port = 3306
 
   # Network configuration
   db_subnet_group_name   = aws_db_subnet_group.this.name
