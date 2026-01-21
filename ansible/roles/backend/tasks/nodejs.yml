@@ -1,25 +1,79 @@
 ---
-- name: Download NodeSource setup script
-  get_url:
-    url: "https://rpm.nodesource.com/setup_{{ nodejs_version }}.x"
-    dest: /tmp/nodesource_setup.sh
-    mode: '0755'
+# Node.js installation from NodeSource repository
+# Professional version with proper idempotency and version control
 
-- name: Run NodeSource setup script
-  command: bash /tmp/nodesource_setup.sh
-  args:
-    creates: /etc/yum.repos.d/nodesource-el.repo
+- name: Check if Node.js is installed
+  stat:
+    path: /usr/bin/node
+  register: node_binary
 
-- name: Install Node.js
-  package:
-    name: nodejs
-    state: present
-
-- name: Verify Node.js installation
-  command: node --version
-  register: node_version
+- name: Get current Node.js version if installed
+  command: /usr/bin/node --version
+  register: node_version_check
   changed_when: false
+  failed_when: false
+  when: node_binary.stat.exists
 
-- name: Display Node.js version
+- name: Parse current Node.js major version
+  set_fact:
+    current_node_major: "{{ node_version_check.stdout | regex_replace('^v([0-9]+).*', '\\1') }}"
+  when: 
+    - node_binary.stat.exists
+    - node_version_check.rc == 0
+
+- name: Display current Node.js version
   debug:
-    msg: "Node.js version installed: {{ node_version.stdout }}"
+    msg: "Node.js {{ node_version_check.stdout }} already installed"
+  when: 
+    - node_binary.stat.exists
+    - current_node_major is defined
+    - current_node_major == nodejs_version
+
+- name: Install Node.js {{ nodejs_version }} from NodeSource
+  when: >
+    not node_binary.stat.exists or
+    current_node_major is not defined or
+    current_node_major != nodejs_version
+  block:
+
+    - name: Remove old NodeSource repositories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/yum.repos.d/nodesource-el.repo
+        - /etc/yum.repos.d/nodesource-el7.repo
+      tags: cleanup
+
+    - name: Add NodeSource repository for Node.js {{ nodejs_version }}
+      shell: |
+        curl -fsSL https://rpm.nodesource.com/setup_{{ nodejs_version }}.x | bash -
+      args:
+        warn: false
+      changed_when: true
+      tags: repo
+
+    - name: Install Node.js
+      yum:
+        name: nodejs
+        state: present
+        update_cache: yes
+      tags: install
+
+    - name: Verify Node.js installation
+      command: /usr/bin/node --version
+      register: installed_version
+      changed_when: false
+      failed_when: installed_version.rc != 0
+
+    - name: Verify npm installation
+      command: /usr/bin/npm --version
+      register: npm_version
+      changed_when: false
+      failed_when: npm_version.rc != 0
+
+    - name: Display installation result
+      debug:
+        msg: 
+          - "Node.js {{ installed_version.stdout }} installed successfully"
+          - "npm {{ npm_version.stdout }} installed successfully"
