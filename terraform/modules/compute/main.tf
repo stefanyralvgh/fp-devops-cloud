@@ -43,26 +43,51 @@ resource "aws_instance" "bastion" {
 
   # User data script (runs on first boot)
   user_data = <<-EOF
-              #!/bin/bash
-              # Update system
-              yum update -y
+  #!/bin/bash
+  set -e
 
-              # Set custom hostname
-              hostnamectl set-hostname bastion-${var.environment}
-              echo "127.0.0.1 bastion-${var.environment}" >> /etc/hosts
-              
-              # Install basic tools
-              yum install -y git wget curl vim
-              
-              # Set timezone
-              timedatectl set-timezone America/Bogota
-              
-              # Create banner
-              echo "=====================================" > /etc/motd
-              echo "   Movie Analyst Bastion Host" >> /etc/motd
-              echo "   Environment: ${var.environment}" >> /etc/motd
-              echo "=====================================" >> /etc/motd
-              EOF
+  # Update system
+  yum update -y
+
+  # Set hostname
+  hostnamectl set-hostname bastion-${var.environment}
+  echo "127.0.0.1 bastion-${var.environment}" >> /etc/hosts
+
+  # Install base tools
+  yum install -y \
+    python3 \
+    python3-pip \
+    git \
+    wget \
+    curl \
+    vim \
+    jq
+
+  # Upgrade pip
+  python3 -m pip install --upgrade pip
+
+  # Install Ansible (PINNED version)
+  python3 -m pip install ansible==9.2.0
+
+  # Ensure python points to python3
+  alternatives --set python /usr/bin/python3 || true
+
+  # Verify installation
+  python --version
+  ansible --version
+
+  # Set timezone
+  timedatectl set-timezone America/Bogota
+
+  # Banner
+  cat > /etc/motd <<'BANNER'
+  =====================================
+     Movie Analyst Bastion Host
+     Environment: ${var.environment}
+  =====================================
+  BANNER
+EOF
+
 
   tags = {
     Name        = "${var.environment}-bastion-host"
