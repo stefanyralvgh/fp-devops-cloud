@@ -1,18 +1,25 @@
-- name: Configure NodeSource repository
-  ansible.builtin.yum_repository:
-    name: nodesource
-    description: Node.js NodeSource Repository
-    baseurl: "https://rpm.nodesource.com/pub_{{ nodejs_version }}.x/el/$releasever/$basearch"
-    gpgcheck: yes
-    gpgkey: https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL
-    enabled: yes
+---
+- name: Download NodeSource setup script
+  get_url:
+    url: "https://rpm.nodesource.com/setup_{{ nodejs_version }}.x"
+    dest: /tmp/nodesource_setup.sh
+    mode: '0755'
 
-- name: Ensure Node.js is installed
-  ansible.builtin.package:
+- name: Run NodeSource setup script
+  command: bash /tmp/nodesource_setup.sh
+  args:
+    creates: /etc/yum.repos.d/nodesource-el.repo
+
+- name: Install Node.js
+  package:
     name: nodejs
     state: present
 
-- name: Ensure npm is installed
-  ansible.builtin.package:
-    name: npm
-    state: present
+- name: Verify Node.js installation
+  command: node --version
+  register: node_version
+  changed_when: false
+
+- name: Display Node.js version
+  debug:
+    msg: "Node.js version installed: {{ node_version.stdout }}"
