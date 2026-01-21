@@ -1,0 +1,7 @@
+---
+- name: Deploy Backend Application
+  hosts: backend
+  become: yes
+  roles:
+    - common
+    - backend
