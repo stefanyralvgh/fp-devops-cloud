@@ -169,6 +169,13 @@ output "db_connection_string" {
   sensitive   = true
 }
 
+output "db_master_secret_arn" {
+  value     = module.database.db_master_secret_arn
+  sensitive = true
+}
+
+
+
 # LOAD BALANCER OUTPUTS
 # ============================================
 

@@ -69,6 +69,8 @@ module "rds" {
   # Database credentials
   db_name  = var.db_name
   username = var.db_username
+  manage_master_user_password = true
+
   port     = 3306
 
   # Network configuration

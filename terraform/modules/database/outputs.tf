@@ -33,3 +33,9 @@ output "db_connection_string" {
   value       = "mysql://${module.rds.db_instance_username}@${module.rds.db_instance_address}:${module.rds.db_instance_port}/${module.rds.db_instance_name}"
   sensitive   = true
 }
+
+output "db_master_secret_arn" {
+  description = "ARN of the RDS master user secret"
+  value       = module.rds.db_instance_master_user_secret_arn
+  sensitive   = true
+}

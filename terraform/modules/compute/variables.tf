@@ -96,3 +96,10 @@ variable "frontend_sg_id" {
   description = "Security group ID for frontend instances"
   type        = string
 }
+
+# DATABASE VARIABLES
+
+variable "db_master_secret_arn" {
+  description = "ARN of the RDS master user secret"
+  type        = string
+}

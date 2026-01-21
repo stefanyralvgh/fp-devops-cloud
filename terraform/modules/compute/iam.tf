@@ -77,6 +77,29 @@ resource "aws_iam_role" "backend" {
   )
 }
 
+resource "aws_iam_role_policy" "backend_secrets_manager" {
+  name = "secrets-manager-read-rds"
+  role = aws_iam_role.backend.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+
+        Resource = var.db_master_secret_arn
+      }
+    ]
+  })
+}
+
+
+
 resource "aws_iam_role_policy" "backend_cloudwatch" {
   name = "cloudwatch-logs"
   role = aws_iam_role.backend.id

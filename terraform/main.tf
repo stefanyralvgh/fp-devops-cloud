@@ -61,6 +61,9 @@ module "compute" {
   backend_instance_type  = "t3.micro"
   backend_instance_count = 2
 
+  # Database configuration
+  db_master_secret_arn   = module.database.db_master_secret_arn
+
   # Frontend configuration
   frontend_instance_count = 2
   frontend_instance_type  = "t3.micro"
