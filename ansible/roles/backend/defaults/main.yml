@@ -1,6 +1,6 @@
 ---
 # Node.js version
-nodejs_version: "18"
+nodejs_version: "16"
 
 # Application configuration
 app_name: "movie-analyst-api"
