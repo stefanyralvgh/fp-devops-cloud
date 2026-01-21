@@ -148,6 +148,9 @@ resource "aws_instance" "backend" {
               #!/bin/bash
               # Update system
               yum update -y
+
+              # Install Python for Ansible
+              yum install -y python3
               
               # Install development tools
               yum groupinstall -y "Development Tools"
