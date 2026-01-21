@@ -1,0 +1,22 @@
+---
+# Backend role main tasks orchestration
+
+- name: Include Node.js installation tasks
+  include_tasks: nodejs.yml
+  tags:
+    - nodejs
+
+- name: Include PM2 configuration tasks
+  include_tasks: pm2.yml
+  tags:
+    - pm2
+
+- name: Include application deployment tasks
+  include_tasks: application.yml
+  tags:
+    - application
+
+- name: Include service management tasks
+  include_tasks: service.yml
+  tags:
+    - service

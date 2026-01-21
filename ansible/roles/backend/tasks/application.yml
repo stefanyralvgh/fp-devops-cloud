@@ -1,0 +1,66 @@
+---
+- name: Create /opt directory
+  file:
+    path: "/opt"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Clone devops-rampup repository
+  git:
+    repo: "{{ app_repo_url }}"
+    dest: "/opt/devops-rampup"
+    version: "{{ app_repo_branch }}"
+    force: yes
+  become_user: "{{ app_user }}"
+  notify: restart pm2 app
+
+- name: Create symlink to movie-analyst-api
+  file:
+    src: "/opt/devops-rampup/{{ app_subdirectory }}"
+    dest: "{{ app_directory }}"
+    state: link
+    force: yes
+
+- name: Verify package.json exists
+  stat:
+    path: "{{ app_directory }}/package.json"
+  register: package_json
+
+- name: Fail if package.json not found
+  fail:
+    msg: "package.json not found in {{ app_directory }}"
+  when: not package_json.stat.exists
+
+- name: Install application dependencies
+  npm:
+    path: "{{ app_directory }}"
+    state: present
+    production: yes
+  become_user: "{{ app_user }}"
+
+- name: Create PM2 ecosystem file
+  template:
+    src: ecosystem.config.js.j2
+    dest: "{{ app_directory }}/ecosystem.config.js"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0644'
+  notify: restart pm2 app
+
+- name: Run database seeds
+  command: node seeds.js
+  args:
+    chdir: "{{ app_directory }}"
+  environment:
+    DB_HOST: "{{ db_host }}"
+    DB_PORT: "{{ db_port }}"
+    DB_NAME: "{{ db_name }}"
+    DB_USER: "{{ db_user }}"
+    DB_PASS: "{{ db_password }}"
+  become_user: "{{ app_user }}"
+  run_once: true
+  ignore_errors: yes
+  tags:
+    - seeds

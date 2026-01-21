@@ -1,0 +1,21 @@
+- name: Install PM2 globally
+  ansible.builtin.npm:
+    name: pm2
+    global: yes
+    state: present
+
+- name: Generate PM2 startup systemd unit
+  ansible.builtin.command: >
+    pm2 startup systemd
+    -u {{ app_user }}
+    --hp /home/{{ app_user }}
+  args:
+    creates: /etc/systemd/system/pm2-{{ app_user }}.service
+  become: yes
+
+- name: Enable PM2 service
+  ansible.builtin.systemd:
+    name: pm2-{{ app_user }}
+    enabled: yes
+    daemon_reload: yes
+  become: yes
