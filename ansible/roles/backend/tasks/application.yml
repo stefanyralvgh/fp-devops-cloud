@@ -1,20 +1,21 @@
 ---
-- name: Create /opt directory
+- name: Create app directory
   file:
-    path: "/opt"
+    path: /opt/devops-rampup
     state: directory
-    owner: root
-    group: root
-    mode: '0755'
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+  become: yes
 
 - name: Clone devops-rampup repository
   git:
-    repo: "{{ app_repo_url }}"
-    dest: "/opt/devops-rampup"
-    version: "{{ app_repo_branch }}"
-    force: yes
-  become_user: "{{ app_user }}"
-  notify: restart pm2 app
+    repo: https://github.com/aljoveza/devops-rampup.git
+    dest: /opt/devops-rampup
+    version: main
+    update: yes
+  become: false
+
 
 - name: Create symlink to movie-analyst-api
   file:
