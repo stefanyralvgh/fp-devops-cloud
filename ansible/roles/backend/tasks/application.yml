@@ -1,21 +1,33 @@
 ---
-- name: Create app directory
+- name: Create /opt directory
   file:
-    path: /opt/devops-rampup
+    path: "/opt"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: yes
+
+- name: Create /opt/devops-rampup directory with correct ownership
+  file:
+    path: "/opt/devops-rampup"
     state: directory
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
-    mode: "0755"
+    mode: '0755'
   become: yes
 
 - name: Clone devops-rampup repository
   git:
-    repo: https://github.com/aljoveza/devops-rampup.git
-    dest: /opt/devops-rampup
-    version: main
-    update: yes
-  become: false
-
+    repo: "{{ app_repo_url }}"
+    dest: "/opt/devops-rampup"
+    version: "{{ app_repo_branch }}"
+    force: yes
+    accept_hostkey: yes
+  environment:
+    GIT_TERMINAL_PROMPT: '0'
+  become_user: "{{ app_user }}"
+  notify: restart pm2 app
 
 - name: Create symlink to movie-analyst-api
   file:
@@ -23,6 +35,7 @@
     dest: "{{ app_directory }}"
     state: link
     force: yes
+  become: yes
 
 - name: Verify package.json exists
   stat:
@@ -35,7 +48,7 @@
   when: not package_json.stat.exists
 
 - name: Install application dependencies
-  npm:
+  community.general.npm:
     path: "{{ app_directory }}"
     state: present
     production: yes
@@ -48,6 +61,7 @@
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
     mode: '0644'
+  become: yes
   notify: restart pm2 app
 
 - name: Run database seeds
