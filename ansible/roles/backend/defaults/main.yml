@@ -6,7 +6,7 @@ nodejs_version: "16"
 app_name: "movie-analyst-api"
 app_user: "ec2-user"
 app_directory: "/opt/movie-analyst-api"
-app_repo_url: "https://github.com/epam/devops-rampup.git"
+app_repo_url: "https://github.com/aljoveza/devops-rampup.git"
 app_repo_branch: "main"
 app_subdirectory: "movie-analyst-api"
 
