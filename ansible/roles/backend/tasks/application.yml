@@ -64,18 +64,18 @@
   become: yes
   notify: restart pm2 app
 
-- name: Run database seeds
-  command: node seeds.js
-  args:
-    chdir: "{{ app_directory }}"
-  environment:
-    DB_HOST: "{{ db_host }}"
-    DB_PORT: "{{ db_port }}"
-    DB_NAME: "{{ db_name }}"
-    DB_USER: "{{ db_user }}"
-    DB_PASS: "{{ vault_db_password }}"
-  become_user: "{{ app_user }}"
-  run_once: true
-  ignore_errors: yes
-  tags:
-    - seeds
+# - name: Run database seeds
+#   command: node seeds.js
+#   args:
+#     chdir: "{{ app_directory }}"
+#   environment:
+#     DB_HOST: "{{ db_host }}"
+#     DB_PORT: "{{ db_port }}"
+#     DB_NAME: "{{ db_name }}"
+#     DB_USER: "{{ db_user }}"
+#     DB_PASS: "{{ vault_db_password }}"
+#   become_user: "{{ app_user }}"
+#   run_once: true
+#   ignore_errors: yes
+#   tags:
+#     - seeds
