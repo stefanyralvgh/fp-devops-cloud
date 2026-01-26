@@ -1,11 +1,10 @@
 ---
 # Common role - System baseline configuration
-# Bootstrap + baseline configuration for Amazon Linux 2
+# Amazon Linux 2 + Ansible 2.10 compatible
 
-
-# Bootstrap (CRÍTICO)
-- name: Bootstrap Python dependencies for Ansible
-  raw: yum install -y python3 python3-pip python3-libselinux python3-rpm
+# Bootstrap (sin Python dependency)
+- name: Bootstrap Python
+  raw: yum install -y python3 python3-pip
   changed_when: false
   tags: bootstrap
 
@@ -14,63 +13,40 @@
   tags: bootstrap
 
 
-# System baseline (declarative)
+# System baseline (legacy-safe)
 
-- name: Update all system packages (Amazon Linux 2)
+- name: Update all system packages
   raw: yum update -y
   tags: packages
 
-
 - name: Install base development tools
-  package:
-    name:
-      - git
-      - wget
-      - curl
-      - vim
-      - unzip
-      - tar
-      - tree
-    state: present
+  raw: yum install -y git wget curl vim unzip tar tree
   tags: packages
 
-- name: Ensure Python 3 and pip are installed
-  package:
-    name:
-      - python3
-      - python3-pip
-    state: present
-  tags: packages
-
-- name: Set timezone to America/Bogota
-  timezone:
-    name: America/Bogota
+- name: Ensure chrony is installed
+  raw: yum install -y chrony
   tags: system
 
-- name: Ensure NTP is installed and running
-  systemd:
-    name: chronyd
-    state: started
-    enabled: true
+- name: Enable and start chronyd
+  command: systemctl enable --now chronyd
   tags: system
 
-# Security hardening tasks
+
+# Security hardening (estos módulos SÍ están bien)
 
 - name: Disable root login via SSH
   lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^PermitRootLogin'
     line: 'PermitRootLogin no'
-    state: present
   notify: restart sshd
   tags: security
 
-- name: Disable password authentication (SSH keys only)
+- name: Disable password authentication
   lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^PasswordAuthentication'
     line: 'PasswordAuthentication no'
-    state: present
   notify: restart sshd
   tags: security
 
@@ -78,5 +54,4 @@
   template:
     src: motd.j2
     dest: /etc/motd
-    mode: '0644'
-  tags: system
+    mod
