@@ -16,11 +16,10 @@
 
 # System baseline (declarative)
 
-- name: Update all packages to latest version
-  package:
-    name: "*"
-    state: latest
+- name: Update all system packages (Amazon Linux 2)
+  raw: yum update -y
   tags: packages
+
 
 - name: Install base development tools
   package:
