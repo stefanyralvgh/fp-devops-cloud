@@ -41,10 +41,12 @@ resource "aws_instance" "bastion" {
     }
   }
 
-  # User data script (runs on first boot)
   user_data = <<-EOF
   #!/bin/bash
-  set -e
+  set -euxo pipefail
+
+  # Log everything
+  exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 
   # Update system
   yum update -y
@@ -66,15 +68,14 @@ resource "aws_instance" "bastion" {
   # Upgrade pip
   python3 -m pip install --upgrade pip
 
-  # Install Ansible (PINNED version)
-  python3 -m pip install ansible==9.2.0
+  # Install Ansible (Amazon Linux 2 correct way)
+  amazon-linux-extras enable ansible2
+  yum clean metadata
+  yum install -y ansible
 
-  # Ensure python points to python3
-  alternatives --set python /usr/bin/python3 || true
-
-  # Verify installation
-  python --version
+  # Verify (hard fail if missing)
   ansible --version
+  ansible-playbook --version
 
   # Set timezone
   timedatectl set-timezone America/Bogota
@@ -82,11 +83,12 @@ resource "aws_instance" "bastion" {
   # Banner
   cat > /etc/motd <<'BANNER'
   =====================================
-     Movie Analyst Bastion Host
-     Environment: ${var.environment}
+    Movie Analyst Bastion Host
+    Environment: ${var.environment}
   =====================================
   BANNER
-EOF
+  EOF
+
 
 
   tags = {
@@ -149,8 +151,6 @@ resource "aws_instance" "backend" {
               # Update system
               yum update -y
 
-              # Install Python for Ansible
-              yum install -y python3
               
               # Install development tools
               yum groupinstall -y "Development Tools"
