@@ -54,4 +54,5 @@
   template:
     src: motd.j2
     dest: /etc/motd
-    mod
+    mode: '0644'
+  tags: system
