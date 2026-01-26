@@ -1,48 +1,25 @@
 variable "name" {
-  description = "Name of the Application Load Balancer"
+  description = "Name of the load balancer"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name (qa, prod)"
   type        = string
 }
 
 variable "vpc_id" {
-  description = "VPC ID where ALB is deployed"
+  description = "VPC ID where ALB will be created"
   type        = string
 }
 
 variable "public_subnet_ids" {
-  description = "Public subnet IDs for ALB"
+  description = "List of public subnet IDs for ALB"
   type        = list(string)
 }
 
 variable "alb_sg_id" {
-  description = "Security Group ID for the ALB"
-  type        = string
-}
-
-#variable "frontend_instance_ids" {
-#  description = "IDs of frontend EC2 instances"
-#  type        = list(string)
-#}
-
-#variable "frontend_port" {
-#  description = "Port where frontend listens"
-#  type        = number
-#  default     = 80
-#}
-
-variable "health_check_path" {
-  description = "Health check path for backend"
-  type        = string
-  default     = "/"
-}
-
-variable "health_check_interval" {
-  description = "Health check interval in seconds"
-  type        = number
-  default     = 30
-}
-
-variable "target_group_name" {
-  description = "Name of the target group"
+  description = "Security group ID for ALB"
   type        = string
 }
 
@@ -53,8 +30,27 @@ variable "enable_deletion_protection" {
 }
 
 variable "tags" {
-  description = "Tags to apply to ALB resources"
+  description = "Tags to apply to resources"
   type        = map(string)
+  default     = {}
+}
+
+# Frontend configuration
+variable "frontend_instance_ids" {
+  description = "List of frontend instance IDs for target group"
+  type        = list(string)
+}
+
+variable "frontend_port" {
+  description = "Port where frontend listens"
+  type        = number
+  default     = 80
+}
+
+# Backend configuration
+variable "backend_instance_ids" {
+  description = "List of backend instance IDs for target group"
+  type        = list(string)
 }
 
 variable "backend_port" {
@@ -63,7 +59,8 @@ variable "backend_port" {
   default     = 3000
 }
 
-variable "backend_instance_ids" {
-  description = "List of backend instance IDs to attach to target group"
-  type        = list(string)
+variable "backend_health_check_path" {
+  description = "Health check path for backend"
+  type        = string
+  default     = "/health"
 }

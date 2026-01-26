@@ -104,17 +104,21 @@ module "database" {
 module "alb" {
   source = "./modules/loadbalancer"
 
-  name = "${terraform.workspace}-${var.project_name}-alb"
+  name        = "${terraform.workspace}-${var.project_name}-alb"
+  environment = terraform.workspace
 
   vpc_id            = module.networking.vpc_id
   public_subnet_ids = module.networking.public_subnet_ids
   alb_sg_id         = module.security.alb_sg_id
 
+  # Frontend configuration
+  frontend_instance_ids = module.compute.frontend_instance_ids
+  frontend_port         = 80
 
-  backend_instance_ids = module.compute.backend_instance_ids
-  backend_port         = 3000
-  target_group_name    = "${terraform.workspace}-backend-tg"
-  health_check_path    = "/health"
+  # Backend configuration
+  backend_instance_ids      = module.compute.backend_instance_ids
+  backend_port              = 3000
+  backend_health_check_path = "/health"
 
   enable_deletion_protection = terraform.workspace == "prod"
 

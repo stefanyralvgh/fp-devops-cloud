@@ -130,6 +130,15 @@ resource "aws_security_group" "backend" {
     security_groups = [aws_security_group.bastion.id]
   }
 
+
+  ingress {
+    description     = "Backend API from ALB"
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
   egress {
     description = "Allow all outbound traffic"
     from_port   = 0
@@ -144,6 +153,8 @@ resource "aws_security_group" "backend" {
     ManagedBy   = "Terraform"
   }
 }
+
+
 
 
 # 5. RDS SECURITY GROUP
