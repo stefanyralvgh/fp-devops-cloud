@@ -3,12 +3,11 @@
 # Bootstrap + baseline configuration for Amazon Linux 2
 
 
-# Bootstrap phase (no Python dependency)
-
-# - name: Bootstrap Python dependencies for Ansible
-#   raw: yum install -y python3 python3-pip python3-libselinux python3-rpm
-#   changed_when: false
-#   tags: bootstrap
+# Bootstrap (CRÍTICO)
+- name: Bootstrap Python dependencies for Ansible
+  raw: yum install -y python3 python3-pip python3-libselinux python3-rpm
+  changed_when: false
+  tags: bootstrap
 
 - name: Gather facts after bootstrap
   setup:
