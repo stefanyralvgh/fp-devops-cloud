@@ -57,11 +57,10 @@
 - name: Create PM2 ecosystem file
   template:
     src: ecosystem.config.js.j2
-    dest: "{{ app_directory }}/ecosystem.config.js"
-    owner: "{{ app_user }}"
-    group: "{{ app_user }}"
+    dest: "{{ frontend_app_dir }}/ecosystem.config.js"
+    owner: "{{ frontend_user }}"
+    group: "{{ frontend_group }}"
     mode: '0644'
-  become: yes
   notify: restart pm2 app
 
 # - name: Run database seeds
