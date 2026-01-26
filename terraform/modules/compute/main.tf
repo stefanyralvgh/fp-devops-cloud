@@ -43,19 +43,10 @@ resource "aws_instance" "bastion" {
 
   user_data = <<-EOF
   #!/bin/bash
-  set -euxo pipefail
+  set -ex
 
-  # Log everything
-  exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
-
-  # Update system
   yum update -y
 
-  # Set hostname
-  hostnamectl set-hostname bastion-${var.environment}
-  echo "127.0.0.1 bastion-${var.environment}" >> /etc/hosts
-
-  # Install base tools
   yum install -y \
     python3 \
     python3-pip \
@@ -65,29 +56,18 @@ resource "aws_instance" "bastion" {
     vim \
     jq
 
-  # Upgrade pip
   python3 -m pip install --upgrade pip
+  python3 -m pip install ansible==9.2.0
 
-  # Install Ansible (Amazon Linux 2 correct way)
-  amazon-linux-extras enable ansible2
-  yum clean metadata
-  yum install -y ansible
+  export PATH="/usr/local/bin:$PATH"
 
-  # Verify (hard fail if missing)
   ansible --version
   ansible-playbook --version
 
-  # Set timezone
+  hostnamectl set-hostname bastion-${var.environment}
   timedatectl set-timezone America/Bogota
-
-  # Banner
-  cat > /etc/motd <<'BANNER'
-  =====================================
-    Movie Analyst Bastion Host
-    Environment: ${var.environment}
-  =====================================
-  BANNER
   EOF
+
 
 
 
