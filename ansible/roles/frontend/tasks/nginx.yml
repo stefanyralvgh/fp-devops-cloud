@@ -22,8 +22,9 @@
     src: nginx-frontend.conf.j2
     dest: /etc/nginx/conf.d/frontend.conf
     mode: '0644'
-    validate: 'nginx -t -c %s'
+    validate: 'nginx -t'
   notify: restart nginx
+
 
 
 - name: Ensure Nginx is started and enabled
