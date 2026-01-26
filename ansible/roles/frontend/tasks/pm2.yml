@@ -1,18 +1,22 @@
 ---
 - name: Install PM2 globally
-  community.general.npm:
-    name: pm2
-    global: yes
-    state: present
+  command: npm install -g pm2
+  become: yes
+  environment:
+    PATH: /usr/bin:/usr/local/bin:/bin:/usr/sbin:/sbin
+
 
 - name: Generate PM2 startup systemd unit
   command: >
     pm2 startup systemd
     -u {{ frontend_user }}
     --hp /home/{{ frontend_user }}
+  become: yes
+  environment:
+    PATH: /usr/bin:/usr/local/bin:/bin:/usr/sbin:/sbin
   args:
     creates: /etc/systemd/system/pm2-{{ frontend_user }}.service
-  become: yes
+
 
 - name: Enable PM2 service
   systemd:

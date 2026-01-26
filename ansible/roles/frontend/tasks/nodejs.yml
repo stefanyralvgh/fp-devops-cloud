@@ -1,19 +1,22 @@
 ---
-- name: Add NodeSource repository (Node.js 16)
+- name: Download NodeSource setup script (Node 16 LTS)
   raw: curl -fsSL https://rpm.nodesource.com/setup_16.x | bash -
-  args:
-    warn: false
+  become: yes
   tags: nodejs
 
-- name: Install Node.js
+- name: Install Node.js (includes npm)
   raw: yum install -y nodejs
+  become: yes
   tags: nodejs
 
-- name: Verify Node.js installation
-  command: node --version
-  register: node_version
+- name: Verify Node and npm
+  command: "{{ item }}"
+  loop:
+    - node --version
+    - npm --version
+  register: node_check
   changed_when: false
   tags: nodejs
 
 - debug:
-    msg: "Node.js version installed: {{ node_version.stdout }}"
+    var: node_check.stdout_lines
