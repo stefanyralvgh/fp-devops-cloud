@@ -1,0 +1,10 @@
+---
+- name: restart pm2 app
+  command: pm2 reload {{ pm2_app_name }}
+  become_user: "{{ frontend_user }}"
+  ignore_errors: yes
+
+- name: restart nginx
+  systemd:
+    name: nginx
+    state: restarted

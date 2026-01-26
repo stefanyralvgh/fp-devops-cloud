@@ -1,0 +1,56 @@
+---
+- name: Install Node.js 16 LTS for Amazon Linux 2
+  block:
+    - name: Check if Node.js is already installed
+      command: node --version
+      register: node_check
+      changed_when: false
+      failed_when: false
+
+    - name: Show current Node.js version if installed
+      debug:
+        msg: "Node.js {{ node_check.stdout }} is already installed"
+      when: 
+        - node_check.rc == 0
+        - node_check.stdout is search('^v16\.')
+
+    - name: Install Node.js 16 from NodeSource
+      when: node_check.rc != 0 or not (node_check.stdout is search('^v16\.'))
+      block:
+        - name: Download NodeSource repository setup script
+          get_url:
+            url: https://rpm.nodesource.com/setup_16.x
+            dest: /tmp/nodesource_setup.sh
+            mode: '0755'
+
+        - name: Run NodeSource setup script
+          command: /tmp/nodesource_setup.sh
+          args:
+            creates: /etc/yum.repos.d/nodesource-el7.repo
+
+        - name: Install Node.js and npm
+          package:
+            name: nodejs
+            state: present
+            update_cache: yes
+
+        - name: Clean up setup script
+          file:
+            path: /tmp/nodesource_setup.sh
+            state: absent
+
+    - name: Verify Node.js installation
+      command: node --version
+      register: node_version
+      changed_when: false
+
+    - name: Verify npm installation
+      command: npm --version
+      register: npm_version
+      changed_when: false
+
+    - name: Display installation result
+      debug:
+        msg:
+          - "✓ Node.js {{ node_version.stdout }} installed"
+          - "✓ npm {{ npm_version.stdout }} installed"

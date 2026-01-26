@@ -1,0 +1,22 @@
+---
+- name: Install PM2 globally
+  community.general.npm:
+    name: pm2
+    global: yes
+    state: present
+
+- name: Generate PM2 startup systemd unit
+  command: >
+    pm2 startup systemd
+    -u {{ frontend_user }}
+    --hp /home/{{ frontend_user }}
+  args:
+    creates: /etc/systemd/system/pm2-{{ frontend_user }}.service
+  become: yes
+
+- name: Enable PM2 service
+  systemd:
+    name: pm2-{{ frontend_user }}
+    enabled: yes
+    daemon_reload: yes
+  become: yes

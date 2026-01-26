@@ -1,0 +1,8 @@
+---
+- name: Deploy Movie Analyst Frontend
+  hosts: frontend
+  become: yes
+  
+  roles:
+    - common
+    - frontend

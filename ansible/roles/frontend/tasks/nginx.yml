@@ -1,0 +1,32 @@
+---
+- name: Check if Nginx is installed
+  command: nginx -v
+  register: nginx_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Nginx via amazon-linux-extras
+  shell: amazon-linux-extras install nginx1 -y
+  args:
+    creates: /usr/sbin/nginx
+  when: nginx_check.rc != 0
+
+- name: Ensure Nginx conf.d directory exists
+  file:
+    path: /etc/nginx/conf.d
+    state: directory
+    mode: '0755'
+
+- name: Configure Nginx reverse proxy
+  template:
+    src: nginx-frontend.conf.j2
+    dest: /etc/nginx/conf.d/frontend.conf
+    mode: '0644'
+    validate: 'nginx -t -c /etc/nginx/nginx.conf'
+  notify: restart nginx
+
+- name: Ensure Nginx is started and enabled
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes
