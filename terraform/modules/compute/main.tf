@@ -43,10 +43,15 @@ resource "aws_instance" "bastion" {
 
   user_data = <<-EOF
   #!/bin/bash
-  set -ex
+  set -e
 
+  # Log básico
+  exec > /var/log/user-data.log 2>&1
+
+  # Update system
   yum update -y
 
+  # Base tools
   yum install -y \
     python3 \
     python3-pip \
@@ -56,23 +61,31 @@ resource "aws_instance" "bastion" {
     vim \
     jq
 
-  python3 -m pip install --upgrade pip
-  python3 -m pip install ansible==9.2.0
+  # Upgrade pip (compatible)
+  python3 -m pip install --upgrade "pip<23"
 
-  export PATH="/usr/local/bin:$PATH"
+  # Install Ansible LEGACY compatible with Python 3.7
+  python3 -m pip install "ansible<2.12"
 
+  # Make ansible available system-wide
+  ln -s /usr/local/bin/ansible /usr/bin/ansible
+  ln -s /usr/local/bin/ansible-playbook /usr/bin/ansible-playbook
+
+  # Verify
   ansible --version
   ansible-playbook --version
 
-  hostnamectl set-hostname bastion-${var.environment}
+  # Timezone
   timedatectl set-timezone America/Bogota
 
-    cat <<EOF > /etc/motd
+  # Banner
+  cat > /etc/motd <<EOF
   =====================================
-  Movie Analyst Bastion Host
-  Environment: ${var.environment}
+    Movie Analyst Bastion Host
+    Environment: ${var.environment}
   =====================================
   EOF
+
 
 
 
