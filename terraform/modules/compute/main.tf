@@ -66,6 +66,12 @@ resource "aws_instance" "bastion" {
 
   hostnamectl set-hostname bastion-${var.environment}
   timedatectl set-timezone America/Bogota
+
+    cat <<EOF > /etc/motd
+  =====================================
+  Movie Analyst Bastion Host
+  Environment: ${var.environment}
+  =====================================
   EOF
 
 
