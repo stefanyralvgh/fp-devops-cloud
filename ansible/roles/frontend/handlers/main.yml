@@ -4,7 +4,15 @@
   become_user: "{{ frontend_user }}"
   ignore_errors: yes
 
-- name: restart nginx
-  systemd:
-    name: nginx
-    state: restarted
+
+- name: validate and reload nginx
+  block:
+    - name: Validate nginx configuration
+      command: nginx -t
+      become: yes
+
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+  become: yes
