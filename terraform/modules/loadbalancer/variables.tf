@@ -18,19 +18,19 @@ variable "alb_sg_id" {
   type        = string
 }
 
-variable "frontend_instance_ids" {
-  description = "IDs of frontend EC2 instances"
-  type        = list(string)
-}
+#variable "frontend_instance_ids" {
+#  description = "IDs of frontend EC2 instances"
+#  type        = list(string)
+#}
 
-variable "frontend_port" {
-  description = "Port where frontend listens"
-  type        = number
-  default     = 80
-}
+#variable "frontend_port" {
+#  description = "Port where frontend listens"
+#  type        = number
+#  default     = 80
+#}
 
 variable "health_check_path" {
-  description = "Health check path for frontend"
+  description = "Health check path for backend"
   type        = string
   default     = "/"
 }
@@ -55,4 +55,15 @@ variable "enable_deletion_protection" {
 variable "tags" {
   description = "Tags to apply to ALB resources"
   type        = map(string)
+}
+
+variable "backend_port" {
+  description = "Port where backend API listens"
+  type        = number
+  default     = 3000
+}
+
+variable "backend_instance_ids" {
+  description = "List of backend instance IDs to attach to target group"
+  type        = list(string)
 }

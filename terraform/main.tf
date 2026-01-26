@@ -111,9 +111,10 @@ module "alb" {
   alb_sg_id         = module.security.alb_sg_id
 
 
-  frontend_instance_ids = module.compute.frontend_instance_ids
-
-  target_group_name = "${terraform.workspace}-frontend-tg"
+  backend_instance_ids = module.compute.backend_instance_ids
+  backend_port         = 3000
+  target_group_name    = "${terraform.workspace}-backend-tg"
+  health_check_path    = "/health"
 
   enable_deletion_protection = terraform.workspace == "prod"
 

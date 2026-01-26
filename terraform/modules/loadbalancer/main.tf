@@ -1,6 +1,6 @@
 module "alb" {
   source  = "terraform-aws-modules/alb/aws"
-  version = "~> 8.0" # ✅ Cambiar a versión 8.x
+  version = "~> 8.0"
 
   name = var.name
 
@@ -26,7 +26,7 @@ module "alb" {
     {
       name             = var.target_group_name
       backend_protocol = "HTTP"
-      backend_port     = var.frontend_port
+      backend_port     = var.backend_port
       target_type      = "instance"
 
       health_check = {
@@ -49,6 +49,6 @@ resource "aws_lb_target_group_attachment" "frontend" {
   count = length(var.frontend_instance_ids)
 
   target_group_arn = module.alb.target_group_arns[0]
-  target_id        = var.frontend_instance_ids[count.index]
-  port             = var.frontend_port
+  target_id        = var.backend_instance_ids[count.index]
+  port             = var.backend_port
 }
