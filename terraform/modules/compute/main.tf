@@ -250,47 +250,7 @@ resource "aws_instance" "frontend" {
               Environment: ${var.environment}
               =====================================
               BANNER
-              
-              # Create simple test page
-              cat > /usr/share/nginx/html/index.html <<'HTML'
-              <!DOCTYPE html>
-              <html>
-              <head>
-                  <meta charset="UTF-8">
-                  <title>Movie Analyst - Frontend ${count.index + 1}</title>
-                  <style>
-                      body {
-                          font-family: Arial, sans-serif;
-                          max-width: 800px;
-                          margin: 50px auto;
-                          padding: 20px;
-                          background: #f0f0f0;
-                      }
-                      .container {
-                          background: white;
-                          padding: 30px;
-                          border-radius: 8px;
-                          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                      }
-                      h1 { color: #333; }
-                      .status { color: #28a745; font-weight: bold; }
-                      .info { background: #e9ecef; padding: 10px; border-radius: 4px; margin: 10px 0; }
-                  </style>
-              </head>
-              <body>
-                  <div class="container">
-                      <h1>🎬 Movie Analyst Platform</h1>
-                      <p class="status">✅ Frontend Server Running</p>
-                      <div class="info">
-                          <strong>Instance:</strong> ${count.index + 1}<br>
-                          <strong>Environment:</strong> ${var.environment}<br>
-                          <strong>Server:</strong> Nginx on Amazon Linux 2
-                      </div>
-                      <p>This server is ready to serve the Movie Analyst frontend application.</p>
-                  </div>
-              </body>
-              </html>
-              HTML
+
               EOF
 
   tags = {
