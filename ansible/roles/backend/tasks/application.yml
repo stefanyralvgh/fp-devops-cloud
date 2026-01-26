@@ -57,9 +57,9 @@
 - name: Create PM2 ecosystem file
   template:
     src: ecosystem.config.js.j2
-    dest: "{{ frontend_app_dir }}/ecosystem.config.js"
-    owner: "{{ frontend_user }}"
-    group: "{{ frontend_group }}"
+    dest: "{{ app_directory }}/ecosystem.config.js"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
     mode: '0644'
   notify: restart pm2 app
 
