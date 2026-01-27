@@ -1,0 +1,50 @@
+---
+
+- name: Create health check route file
+  copy:
+    content: |
+      // Health check endpoint for ALB
+      app.get('/health', function(req, res) {
+        res.status(200).json({ 
+          status: 'healthy',
+          service: 'movie-analyst-api',
+          timestamp: new Date().toISOString()
+        });
+      });
+    dest: /tmp/healthcheck-route.txt
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0644'
+
+- name: Check if health check already exists
+  shell: grep -q "/health" {{ app_directory }}/server.js
+  register: health_check_exists
+  failed_when: false
+  changed_when: false
+
+- name: Backup original server.js
+  copy:
+    src: "{{ app_directory }}/server.js"
+    dest: "{{ app_directory }}/server.js.backup"
+    remote_src: yes
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+  when: health_check_exists.rc != 0
+
+- name: Insert health check before app.listen()
+  lineinfile:
+    path: "{{ app_directory }}/server.js"
+    insertbefore: "^app.listen"
+    line: |
+      // Health check endpoint for ALB
+      app.get('/health', function(req, res) {
+        res.status(200).json({ 
+          status: 'healthy',
+          service: 'movie-analyst-api',
+          timestamp: new Date().toISOString()
+        });
+      });
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+  when: health_check_exists.rc != 0
+  notify: restart pm2 app
