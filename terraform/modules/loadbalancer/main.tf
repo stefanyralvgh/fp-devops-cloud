@@ -13,10 +13,12 @@ module "alb" {
 
   enable_deletion_protection = var.enable_deletion_protection
 
+
+
   # TARGET GROUP 1: FRONTEND
   target_groups = [
     {
-      name             = "${var.environment}-frontend-tg"
+      name             = "${var.environment}-frontend-tg-v2"
       backend_protocol = "HTTP"
       backend_port     = var.frontend_port
       target_type      = "instance"

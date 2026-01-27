@@ -84,6 +84,14 @@ resource "aws_security_group" "frontend" {
   }
 
   ingress {
+    description     = "Node.js frontend from ALB"
+    from_port       = 3030
+    to_port         = 3030
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  ingress {
     description     = "SSH from Bastion"
     from_port       = 22
     to_port         = 22
