@@ -75,14 +75,10 @@ module "alb" {
       conditions = [{
         path_patterns = [
           "/movies",
-          "/movies/*",
-          "/reviewers",
-          "/reviewers/*",
           "/publications",
           "/publications/*",
           "/pending",
-          "/pending/*",
-          "/health"
+          "/pending/*"
       ]
       }]
     }
