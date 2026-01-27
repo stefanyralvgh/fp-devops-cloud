@@ -16,6 +16,11 @@
   tags:
     - application
 
+- name: Include health check configuration
+  include_tasks: healthcheck.yml
+  tags:
+    - healthcheck
+
 - name: Include service management tasks
   include_tasks: service.yml
   tags:
