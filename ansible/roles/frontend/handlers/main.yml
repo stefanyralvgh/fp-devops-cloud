@@ -1,18 +1,20 @@
 ---
-- name: restart pm2 app
-  command: pm2 reload {{ pm2_app_name }}
-  become_user: "{{ frontend_user }}"
-  ignore_errors: yes
+# ansible/roles/frontend/handlers/main.yml
 
+- name: restart nginx
+  systemd:
+    name: nginx
+    state: restarted
+  become: true
 
-- name: validate and reload nginx
-  block:
-    - name: Validate nginx configuration
-      command: nginx -t
-      become: yes
+- name: reload nginx
+  systemd:
+    name: nginx
+    state: reloaded
+  become: true
 
-    - name: Reload nginx
-      systemd:
-        name: nginx
-        state: reloaded
-  become: yes
+- name: restart pm2
+  command: pm2 restart all
+  become: true
+  become_user: "{{ app_user }}"
+  ignore_errors: true

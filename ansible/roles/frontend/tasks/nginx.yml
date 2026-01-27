@@ -1,50 +1,99 @@
+---
+# ansible/roles/frontend/tasks/nginx.yml
+
 - name: Check if Nginx is installed
   command: nginx -v
   register: nginx_check
-  changed_when: false
   failed_when: false
-  tags: nginx
+  changed_when: false
 
 - name: Enable nginx repository (Amazon Linux)
-  command: amazon-linux-extras enable nginx1
-  args:
-    creates: /etc/yum.repos.d/nginx.repo
-  tags: nginx
+  command: amazon-linux-extras install nginx1 -y
+  when: nginx_check.rc != 0
+  become: true
 
 - name: Install nginx
   yum:
     name: nginx
     state: present
-  tags: nginx
+  become: true
 
 - name: Ensure Nginx conf.d directory exists
   file:
     path: /etc/nginx/conf.d
     state: directory
     mode: '0755'
-  tags: nginx
+  become: true
 
-- name: Configure nginx main config (remove default server)
-  template:
-    src: nginx.conf.j2
-    dest: /etc/nginx/nginx.conf
-    owner: root
-    group: root
-    mode: '0644'
-  notify: validate and reload nginx
-  tags: nginx
+- name: Remove default server block from main config
+  lineinfile:
+    path: /etc/nginx/nginx.conf
+    regexp: '^\s*server\s*{.*'
+    state: absent
+  become: true
+  notify: restart nginx
 
-- name: Configure Nginx reverse proxy
-  template:
-    src: nginx-frontend.conf.j2
-    dest: /etc/nginx/conf.d/frontend.conf
+- name: Remove lines between server { and its closing }
+  replace:
+    path: /etc/nginx/nginx.conf
+    regexp: '(\s*server\s*\{[\s\S]*?\})'
+    replace: ''
+  become: true
+  notify: restart nginx
+
+- name: Create Nginx configuration for movie-analyst
+  copy:
+    dest: /etc/nginx/conf.d/movie-analyst.conf
+    content: |
+      server {
+          listen 80;
+          server_name _;
+
+          # Frontend - Proxy to React app running on PM2
+          location / {
+              proxy_pass http://localhost:3000;
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection 'upgrade';
+              proxy_set_header Host $host;
+              proxy_cache_bypass $http_upgrade;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+
+          # Backend API - Proxy to ALB
+          location /api/ {
+              proxy_pass http://{{ alb_dns_name }}/;
+              proxy_http_version 1.1;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              
+              # Remove /api prefix when forwarding
+              rewrite ^/api/(.*) /$1 break;
+          }
+
+          # Health check endpoint
+          location /health {
+              access_log off;
+              return 200 "healthy\n";
+              add_header Content-Type text/plain;
+          }
+      }
     mode: '0644'
-  notify: validate and reload nginx
-  tags: nginx
+  become: true
+  notify: restart nginx
+
+- name: Test Nginx configuration
+  command: nginx -t
+  become: true
+  changed_when: false
 
 - name: Ensure Nginx is started and enabled
   systemd:
     name: nginx
     state: started
-    enabled: yes
-  tags: nginx
+    enabled: true
+  become: true

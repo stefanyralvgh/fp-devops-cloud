@@ -1,25 +1,48 @@
 ---
+# ansible/roles/frontend/tasks/service.yml
+
 - name: Check if PM2 process is already running
   command: pm2 list
-  become_user: "{{ frontend_user }}"
-  register: pm2_list
+  register: pm2_status
+  become: true
+  become_user: "{{ app_user }}"
   changed_when: false
   failed_when: false
 
+- name: Stop existing PM2 processes
+  command: pm2 delete all
+  become: true
+  become_user: "{{ app_user }}"
+  when: "'movie-analyst-ui' in pm2_status.stdout"
+  ignore_errors: true
+
 - name: Start application with PM2
-  command: pm2 start {{ frontend_app_dir }}/ecosystem.config.js
+  command: pm2 start {{ app_dir }}/ecosystem.config.js
   args:
-    chdir: "{{ frontend_app_dir }}"
-  become_user: "{{ frontend_user }}"
-  when: pm2_app_name not in pm2_list.stdout
+    chdir: "{{ app_dir }}"
+  become: true
+  become_user: "{{ app_user }}"
+  register: pm2_start
 
 - name: Save PM2 process list
   command: pm2 save
-  become_user: "{{ frontend_user }}"
-  when: pm2_app_name not in pm2_list.stdout
+  become: true
+  become_user: "{{ app_user }}"
 
-- name: Reload application if already running
-  command: pm2 reload {{ pm2_app_name }}
-  become_user: "{{ frontend_user }}"
-  when: pm2_app_name in pm2_list.stdout
-  changed_when: false
+- name: Wait for application to start
+  wait_for:
+    port: 3000
+    host: localhost
+    delay: 5
+    timeout: 60
+    state: started
+
+- name: Verify application is responding
+  uri:
+    url: http://localhost:3000
+    status_code: 200
+    timeout: 10
+  register: app_health
+  retries: 3
+  delay: 5
+  until: app_health.status == 200
