@@ -73,7 +73,17 @@ module "alb" {
       }]
 
       conditions = [{
-        path_patterns = ["/api/*"]
+        path_patterns = [
+          "/movies",
+          "/movies/*",
+          "/reviewers",
+          "/reviewers/*",
+          "/publications",
+          "/publications/*",
+          "/pending",
+          "/pending/*",
+          "/health"
+      ]
       }]
     }
   ]
