@@ -61,67 +61,47 @@ module "alb" {
     }
   ]
 
+
   # LISTENER RULES: Path-based routing
   http_tcp_listener_rules = [
-  # Rule 1: Movies, Reviews, Health (5 patterns)
-  {
-    http_tcp_listener_index = 0
-    priority                = 1
+    # Regla 1: API paths (priority 1)
+    {
+      http_tcp_listener_index = 0
+      priority                = 1
 
-    actions = [{
-      type               = "forward"
-      target_group_index = 1
-    }]
+      actions = [{
+        type               = "forward"
+        target_group_index = 1  # Backend
+      }]
 
-    conditions = [{
-      path_patterns = [
-        "/movies",
-        "/movies/*",
-        "/reviews",
-        "/reviews/*",
-        "/health"
-      ]
-    }]
-  },
-  # Rule 2: Authors, Reviewers (4 patterns)
-  {
-    http_tcp_listener_index = 0
-    priority                = 2
+      conditions = [{
+        path_patterns = [
+          "/api/*",
+          "/authors",
+          "/movies",
+          "/reviewers",
+          "/publications"
+        ]
+      }]
+    },
+    # Regla 2: Additional API paths (priority 2)
+    {
+      http_tcp_listener_index = 0
+      priority                = 2
 
-    actions = [{
-      type               = "forward"
-      target_group_index = 1
-    }]
+      actions = [{
+        type               = "forward"
+        target_group_index = 1  # Backend
+      }]
 
-    conditions = [{
-      path_patterns = [
-#        "/authors",
-#        "/authors/*",
-        "/reviewers",
-        "/reviewers/*"
-      ]
-    }]
-  },
-  # Rule 3: Publications, Pending (4 patterns)
-  {
-    http_tcp_listener_index = 0
-    priority                = 3
-
-    actions = [{
-      type               = "forward"
-      target_group_index = 1
-    }]
-
-    conditions = [{
-      path_patterns = [
-        "/publications",
-        "/publications/*",
-        "/pending",
-        "/pending/*"
-      ]
-    }]
-  }
-]
+      conditions = [{
+        path_patterns = [
+          "/pending",
+          "/health"
+        ]
+      }]
+    }
+  ]
 
   tags = var.tags
 }
