@@ -2,7 +2,7 @@ server {
     listen 80 default_server;
     server_name _;
 
-    # Serve static files from the fronted
+    # Servir archivos estáticos del frontend
     root /opt/movie-analyst-ui;
     index index.html;
 
@@ -10,7 +10,17 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # API calls go to the ALB (path-based routing)
+    # Redirect /api/authors to /api/reviewers (workaround for external repo)
+    location = /api/authors {
+        proxy_pass http://{{ alb_dns_name }}/api/reviewers;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # API calls van al ALB (path-based routing)
     location /api/ {
         proxy_pass http://{{ alb_dns_name }}/api/;
         proxy_http_version 1.1;
