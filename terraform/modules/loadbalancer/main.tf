@@ -95,8 +95,8 @@ module "alb" {
 
     conditions = [{
       path_patterns = [
-        "/authors",
-        "/authors/*",
+#        "/authors",
+#        "/authors/*",
         "/reviewers",
         "/reviewers/*"
       ]

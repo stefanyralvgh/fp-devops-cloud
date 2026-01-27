@@ -5,15 +5,15 @@ server {
     root /opt/movie-analyst-ui;
     index index.html;
 
-    # Redirect /authors directly to backend /reviewers (bypass ALB path rules)
-    location = /authors {
-        proxy_pass http://{{ alb_dns_name }}/reviewers;
-        proxy_http_version 1.1;
-        proxy_set_header Host {{ alb_dns_name }};  # ⬅️ CAMBIO CLAVE
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+    # Redirect /authors directly to backend (bypass ALB)
+        location = /authors {
+            proxy_pass http://10.0.11.170:3000/reviewers;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
 
     # API calls
     location /api/ {
