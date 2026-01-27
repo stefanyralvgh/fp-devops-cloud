@@ -27,14 +27,14 @@
     msg: "PM2 version: {{ pm2_version.stdout | default('PM2 not found in PATH') }}"
 
 - name: Generate PM2 startup systemd unit
-  command: pm2 startup systemd -u {{ app_user }} --hp /home/{{ app_user }}
+  command: pm2 startup systemd -u {{ frontend_user }} --hp /home/{{ frontend_user }}
   become: true
   register: pm2_startup
   changed_when: "'already registered' not in pm2_startup.stdout"
 
 - name: Enable PM2 service
   systemd:
-    name: pm2-{{ app_user }}
+    name: pm2-{{ frontend_user }}
     enabled: true
   become: true
   ignore_errors: true

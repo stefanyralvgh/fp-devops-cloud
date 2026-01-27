@@ -5,33 +5,33 @@
   command: pm2 list
   register: pm2_status
   become: true
-  become_user: "{{ app_user }}"
+  become_user: "{{ frontend_user }}"
   changed_when: false
   failed_when: false
 
 - name: Stop existing PM2 processes
   command: pm2 delete all
   become: true
-  become_user: "{{ app_user }}"
+  become_user: "{{ frontend_user }}"
   when: "'movie-analyst-ui' in pm2_status.stdout"
   ignore_errors: true
 
 - name: Start application with PM2
-  command: pm2 start {{ app_dir }}/ecosystem.config.js
+  command: pm2 start {{ frontend_app_dir }}/ecosystem.config.js
   args:
-    chdir: "{{ app_dir }}"
+    chdir: "{{ frontend_app_dir }}"
   become: true
-  become_user: "{{ app_user }}"
+  become_user: "{{ frontend_user }}"
   register: pm2_start
 
 - name: Save PM2 process list
   command: pm2 save
   become: true
-  become_user: "{{ app_user }}"
+  become_user: "{{ frontend_user }}"
 
 - name: Wait for application to start
   wait_for:
-    port: 3000
+    port: "{{ frontend_port }}"
     host: localhost
     delay: 5
     timeout: 60
@@ -39,7 +39,7 @@
 
 - name: Verify application is responding
   uri:
-    url: http://localhost:3000
+    url: "http://localhost:{{ frontend_port }}"
     status_code: 200
     timeout: 10
   register: app_health
