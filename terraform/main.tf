@@ -111,11 +111,7 @@ module "alb" {
   public_subnet_ids = module.networking.public_subnet_ids
   alb_sg_id         = module.security.alb_sg_id
 
-  # Frontend configuration
-  frontend_instance_ids = module.compute.frontend_instance_ids
-  frontend_port         = 3030
-
-  # Backend configuration
+  # Backend configuration ONLY
   backend_instance_ids      = module.compute.backend_instance_ids
   backend_port              = 3000
   backend_health_check_path = "/health"

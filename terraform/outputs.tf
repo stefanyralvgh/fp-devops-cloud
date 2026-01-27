@@ -190,3 +190,34 @@ output "alb_arn" {
   value       = module.alb.arn
 }
 
+output "frontend_access_urls" {
+  description = "URLs to access frontend instances directly"
+  value = [
+    for idx, ip in module.compute.frontend_public_ips :
+    "http://${ip}  # frontend-${idx + 1}"
+  ]
+}
+
+output "architecture_info" {
+  description = "Architecture flow information"
+  value       = <<-EOT
+  
+  ═══════════════════════════════════════════════════════════
+  ARCHITECTURE FLOW
+  ═══════════════════════════════════════════════════════════
+  
+  USER ACCESS:
+  └─ Frontend: Use any frontend public IP (load balanced by DNS round-robin)
+     ${join("\n     ", [for idx, ip in module.compute.frontend_public_ips : "http://${ip}  # frontend-${idx + 1}"])}
+  
+  API FLOW:
+  User → Frontend (http://frontend-ip)
+       → JavaScript makes /api/* request
+       → Nginx proxy_pass to ALB
+       → ALB (${module.alb.dns_name})
+       → Backend instances
+       → RDS MySQL
+  
+  ═══════════════════════════════════════════════════════════
+  EOT
+}

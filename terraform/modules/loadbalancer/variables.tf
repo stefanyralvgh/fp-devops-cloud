@@ -36,16 +36,16 @@ variable "tags" {
 }
 
 # Frontend configuration
-variable "frontend_instance_ids" {
-  description = "List of frontend instance IDs for target group"
-  type        = list(string)
-}
+#variable "frontend_instance_ids" {
+#  description = "List of frontend instance IDs for target group"
+#  type        = list(string)
+#}
 
-variable "frontend_port" {
-  description = "Port where frontend listens"
-  type        = number
-  default     = 80
-}
+#variable "frontend_port" {
+#  description = "Port where frontend listens"
+#  type        = number
+#  default     = 80
+#}
 
 # Backend configuration
 variable "backend_instance_ids" {
