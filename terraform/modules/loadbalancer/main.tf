@@ -38,7 +38,7 @@ module "alb" {
     {
       port               = 80
       protocol           = "HTTP"
-      target_group_index = 0  # Backend target group
+      target_group_index = 0 # Backend target group
     }
   ]
 
