@@ -63,24 +63,65 @@ module "alb" {
 
   # LISTENER RULES: Path-based routing
   http_tcp_listener_rules = [
-    {
-      http_tcp_listener_index = 0
-      priority                = 1
+  # Rule 1: Movies, Reviews, Health (5 patterns)
+  {
+    http_tcp_listener_index = 0
+    priority                = 1
 
-      actions = [{
-        type               = "forward"
-        target_group_index = 1 # Backend target group
-      }]
+    actions = [{
+      type               = "forward"
+      target_group_index = 1
+    }]
 
-      conditions = [{
-        path_patterns = [
-          "/authors/*",
-          "/publications/*",
-          "/reviews/*"
+    conditions = [{
+      path_patterns = [
+        "/movies",
+        "/movies/*",
+        "/reviews",
+        "/reviews/*",
+        "/health"
       ]
-      }]
-    }
-  ]
+    }]
+  },
+  # Rule 2: Authors, Reviewers (4 patterns)
+  {
+    http_tcp_listener_index = 0
+    priority                = 2
+
+    actions = [{
+      type               = "forward"
+      target_group_index = 1
+    }]
+
+    conditions = [{
+      path_patterns = [
+        "/authors",
+        "/authors/*",
+        "/reviewers",
+        "/reviewers/*"
+      ]
+    }]
+  },
+  # Rule 3: Publications, Pending (4 patterns)
+  {
+    http_tcp_listener_index = 0
+    priority                = 3
+
+    actions = [{
+      type               = "forward"
+      target_group_index = 1
+    }]
+
+    conditions = [{
+      path_patterns = [
+        "/publications",
+        "/publications/*",
+        "/pending",
+        "/pending/*"
+      ]
+    }]
+  }
+]
 
   tags = var.tags
 }
