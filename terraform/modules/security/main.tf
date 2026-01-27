@@ -80,7 +80,7 @@ resource "aws_security_group" "frontend" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # ← CAMBIO: Ahora acepta desde internet
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
@@ -89,6 +89,20 @@ resource "aws_security_group" "frontend" {
     to_port         = 22
     protocol        = "tcp"
     security_groups = [aws_security_group.bastion.id]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.environment}-frontend-sg"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
   }
 }
 
