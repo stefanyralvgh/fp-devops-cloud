@@ -2,9 +2,19 @@ server {
     listen 80 default_server;
     server_name _;
 
-    # Servir archivos estáticos del frontend
+    # Serve static files to frontend
     root /opt/movie-analyst-ui;
     index index.html;
+
+    # Redirect /authors to /api/reviewers (without /api/ prefix)
+    location = /authors {
+        proxy_pass http://qa-movie-analyst-alb-1941054886.us-east-1.elb.amazonaws.com/api/reviewers;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location / {
         try_files $uri $uri/ /index.html;
@@ -12,7 +22,7 @@ server {
 
     # Redirect /api/authors to /api/reviewers (workaround for external repo)
     location = /api/authors {
-        proxy_pass http://{{ alb_dns_name }}/api/reviewers;
+        proxy_pass http://qa-movie-analyst-alb-1941054886.us-east-1.elb.amazonaws.com/api/reviewers;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -22,7 +32,7 @@ server {
 
     # API calls van al ALB (path-based routing)
     location /api/ {
-        proxy_pass http://{{ alb_dns_name }}/api/;
+        proxy_pass http://qa-movie-analyst-alb-1941054886.us-east-1.elb.amazonaws.com/api/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
