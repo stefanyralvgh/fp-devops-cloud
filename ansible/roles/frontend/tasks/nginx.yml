@@ -1,4 +1,3 @@
----
 - name: Check if Nginx is installed
   command: nginx -v
   register: nginx_check
@@ -6,12 +5,17 @@
   failed_when: false
   tags: nginx
 
+- name: Enable nginx repository (Amazon Linux)
+  command: amazon-linux-extras enable nginx1
+  args:
+    creates: /etc/yum.repos.d/nginx.repo
+  tags: nginx
+
 - name: Install nginx
   yum:
     name: nginx
     state: present
   tags: nginx
-
 
 - name: Ensure Nginx conf.d directory exists
   file:
