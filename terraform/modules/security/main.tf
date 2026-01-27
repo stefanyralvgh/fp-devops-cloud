@@ -114,13 +114,6 @@ resource "aws_security_group" "backend" {
   description = "Security group for Backend instances (Node.js)"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "Node.js app traffic from ALB"
-    from_port       = 3000
-    to_port         = 3000
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
 
   ingress {
     description     = "SSH from Bastion"
