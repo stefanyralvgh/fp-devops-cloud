@@ -113,7 +113,7 @@ module "alb" {
 
   # Frontend configuration
   frontend_instance_ids = module.compute.frontend_instance_ids
-  frontend_port         = 80
+  frontend_port         = 3030
 
   # Backend configuration
   backend_instance_ids      = module.compute.backend_instance_ids
