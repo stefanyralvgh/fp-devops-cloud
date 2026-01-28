@@ -19,7 +19,7 @@ pm2_max_memory_restart: "500M"
 # Database configuration (from inventory + vault)
 db_host: "{{ db_endpoint }}"
 db_port: 3306
-db_name: "movie_db"
+db_name: "movieanalyst"
 db_user: "admin"
 db_password: "{{ vault_db_password }}"
 
