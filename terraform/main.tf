@@ -127,3 +127,11 @@ module "alb" {
   )
 }
 
+
+# S3 MODULE FOR IMAGES
+module "storage" {
+  source = "./modules/storage"
+
+  environment = terraform.workspace
+  common_tags = var.common_tags
+}

@@ -221,3 +221,16 @@ output "architecture_info" {
   ═══════════════════════════════════════════════════════════
   EOT
 }
+
+
+# STORAGE OUTPUTS
+# ==========================================
+output "assets_bucket_name" {
+  description = "Name of the assets S3 bucket"
+  value       = module.storage.bucket_name
+}
+
+output "assets_bucket_url" {
+  description = "URL of the assets S3 bucket"
+  value       = module.storage.bucket_url
+}
