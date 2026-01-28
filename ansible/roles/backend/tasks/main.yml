@@ -6,6 +6,11 @@
   tags:
     - nodejs
 
+- name: Include application deployment tasks
+  include_tasks: application.yml
+  tags:
+    - application
+
 - name: Include PM2 configuration tasks
   include_tasks: pm2.yml
   tags:
@@ -18,11 +23,6 @@
   become: true
   tags:
     - database
-
-- name: Include application deployment tasks
-  include_tasks: application.yml
-  tags:
-    - application
 
 - name: Include health check configuration
   include_tasks: healthcheck.yml
