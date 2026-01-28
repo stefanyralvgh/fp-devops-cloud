@@ -13,7 +13,7 @@ module.exports = {
       DB_PORT: {{ db_port }},
       DB_NAME: '{{ db_name }}',
       DB_USER: '{{ db_user }}',
-      DB_PASS: '{{ vault_db_password }}'
+      DB_PASS: '{{ db_password }}'
     },
     error_file: '/home/{{ app_user }}/.pm2/logs/{{ pm2_app_name }}-error.log',
     out_file: '/home/{{ app_user }}/.pm2/logs/{{ pm2_app_name }}-out.log',
