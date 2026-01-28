@@ -14,20 +14,16 @@
     owner: root
     group: root
     mode: '0755'
+  become: yes
 
-- name: Remove existing repository if present
-  file:
-    path: "{{ frontend_repo_dir }}"
-    state: absent
-  become: true
-
-- name: Create repository directory with correct ownership
+- name: Create /opt/devops-rampup directory with correct ownership
   file:
     path: "{{ frontend_repo_dir }}"
     state: directory
     owner: "{{ frontend_user }}"
-    group: "{{ frontend_group }}"
+    group: "{{ frontend_user }}"
     mode: '0755'
+  become: yes
 
 - name: Clone devops-rampup repository
   git:
@@ -47,3 +43,30 @@
     dest: "{{ frontend_app_dir }}"
     state: link
     force: yes
+  become: yes
+
+- name: Verify package.json exists
+  stat:
+    path: "{{ frontend_app_dir }}/package.json"
+  register: package_json
+
+- name: Fail if package.json not found
+  fail:
+    msg: "package.json not found in {{ frontend_app_dir }}"
+  when: not package_json.stat.exists
+
+- name: Install application dependencies
+  community.general.npm:
+    path: "{{ frontend_app_dir }}"
+    state: present
+    production: yes
+  become_user: "{{ frontend_user }}"
+
+- name: Create PM2 ecosystem file
+  template:
+    src: ecosystem.config.js.j2
+    dest: "{{ frontend_app_dir }}/ecosystem.config.js"
+    owner: "{{ frontend_user }}"
+    group: "{{ frontend_user }}"
+    mode: '0644'
+  notify: restart pm2 app
