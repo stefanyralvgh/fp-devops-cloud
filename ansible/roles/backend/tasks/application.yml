@@ -1,4 +1,12 @@
 ---
+- name: Create backend user
+  user:
+    name: "{{ app_user }}"
+    comment: "Backend application user"
+    shell: /bin/bash
+    create_home: yes
+    system: yes
+
 - name: Create /opt directory
   file:
     path: "/opt"
@@ -6,6 +14,12 @@
     owner: root
     group: root
     mode: '0755'
+  become: yes
+
+- name: Remove existing repository if present
+  file:
+    path: "/opt/devops-rampup"
+    state: absent
   become: yes
 
 - name: Create /opt/devops-rampup directory with correct ownership
@@ -62,19 +76,3 @@
     group: "{{ app_user }}"
     mode: '0644'
   notify: restart pm2 app
-
-# - name: Run database seeds
-#   command: node seeds.js
-#   args:
-#     chdir: "{{ app_directory }}"
-#   environment:
-#     DB_HOST: "{{ db_host }}"
-#     DB_PORT: "{{ db_port }}"
-#     DB_NAME: "{{ db_name }}"
-#     DB_USER: "{{ db_user }}"
-#     DB_PASS: "{{ vault_db_password }}"
-#   become_user: "{{ app_user }}"
-#   run_once: true
-#   ignore_errors: yes
-#   tags:
-#     - seeds
