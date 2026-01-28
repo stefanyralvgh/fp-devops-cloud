@@ -42,7 +42,7 @@
   notify: restart pm2 app
 
 - name: Create symlink to movie-analyst-ui
-file:
+  file:
   src: "{{ frontend_repo_dir }}/{{ frontend_subdirectory }}"
   dest: "{{ frontend_app_dir }}"
   state: link
