@@ -1,11 +1,9 @@
 ---
-# ansible/roles/frontend/tasks/service.yml
-
 - name: Check if PM2 process is already running
   command: pm2 list
-  register: pm2_status
   become: true
   become_user: "{{ frontend_user }}"
+  register: pm2_status
   changed_when: false
   failed_when: false
 
@@ -15,6 +13,16 @@
   become_user: "{{ frontend_user }}"
   when: "'movie-analyst-ui' in pm2_status.stdout"
   ignore_errors: true
+
+- name: Verify application directory exists
+  stat:
+    path: "{{ frontend_app_dir }}"
+  register: app_dir_stat
+  
+- name: Fail if application directory doesn't exist
+  fail:
+    msg: "Application directory {{ frontend_app_dir }} does not exist. Repository clone may have failed."
+  when: not app_dir_stat.stat.exists
 
 - name: Start application with PM2
   command: pm2 start {{ frontend_app_dir }}/ecosystem.config.js
