@@ -11,6 +11,14 @@
   tags:
     - pm2
 
+- name: Install MySQL client
+  yum:
+    name: mysql
+    state: present
+  become: true
+  tags:
+    - database
+
 - name: Include application deployment tasks
   include_tasks: application.yml
   tags:
