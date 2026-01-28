@@ -13,8 +13,8 @@
     state: reloaded
   become: true
 
-- name: restart pm2
+- name: restart pm2 app
   command: pm2 restart all
   become: true
-  become_user: "{{ app_user }}"
+  become_user: "{{ frontend_user }}"
   ignore_errors: true
