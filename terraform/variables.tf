@@ -72,5 +72,11 @@ variable "single_nat_gateway" {
 }
 
 
+# MONITORING  VARIABLES
 
+variable "alarm_email" {
+  description = "Email for CloudWatch alarm notifications"
+  type        = string
+  default     = ""
+}
 

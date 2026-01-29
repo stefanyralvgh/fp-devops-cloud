@@ -17,3 +17,17 @@ output "target_group_arn" {
   description = "ARN of the frontend target group"
   value       = module.alb.target_group_arns[0]
 }
+
+
+# Monitoring Outputs
+
+output "alb_arn_suffix" {
+  description = "ARN suffix of the Application Load Balancer (for CloudWatch metrics)"
+  value       = join("/", slice(split("/", module.alb.lb_arn), 1, 4))
+}
+
+
+output "target_group_arn_suffix" {
+  description = "ARN suffix of the frontend target group (for CloudWatch metrics)"
+  value       = join("/", slice(split("/", module.alb.target_group_arns[0]), 1, 3))
+}

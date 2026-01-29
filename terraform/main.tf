@@ -135,3 +135,28 @@ module "storage" {
   environment = terraform.workspace
   common_tags = var.common_tags
 }
+
+
+# MONITORING MODULE
+
+module "monitoring" {
+  source = "./modules/monitoring"
+
+  project_name = var.project_name
+  environment  = terraform.workspace
+
+  # Resource IDs
+  alb_arn_suffix            = module.alb.alb_arn_suffix
+  target_group_arn_suffix   = module.alb.target_group_arn_suffix
+  frontend_instance_ids     = module.compute.frontend_instance_ids
+  backend_instance_ids      = module.compute.backend_instance_ids
+  rds_instance_id           = module.database.db_instance_id
+
+  # Alarm configuration
+  cpu_alarm_threshold        = 80
+  rds_connections_threshold  = 80
+  enable_sns_alerts          = false  # Cambiar a true si quieres emails
+  alert_email                = ""     # Tu email aquí si habilitas SNS
+
+  tags = var.common_tags
+}

@@ -234,3 +234,22 @@ output "assets_bucket_url" {
   description = "URL of the assets S3 bucket"
   value       = module.storage.bucket_url
 }
+
+
+
+# MONITORING OUTPUTS
+# ========================================
+
+output "monitoring_dashboard_url" {
+  description = "URL to CloudWatch Dashboard"
+  value       = module.monitoring.dashboard_url
+}
+
+output "monitoring_alarms" {
+  description = "Summary of configured CloudWatch alarms"
+  value = {
+    frontend_cpu = module.monitoring.frontend_cpu_alarm_names
+    backend_cpu  = module.monitoring.backend_cpu_alarm_names
+    rds          = module.monitoring.rds_alarm_names
+  }
+}

@@ -39,3 +39,11 @@ output "db_master_secret_arn" {
   value       = module.rds.db_instance_master_user_secret_arn
   sensitive   = true
 }
+
+
+# Monitoring Outputs
+
+output "db_instance_id" {
+  description = "RDS instance identifier"
+  value       = module.rds.db_instance_identifier
+}

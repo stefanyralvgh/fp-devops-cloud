@@ -2564,6 +2564,7 @@ Total: ~$22-28/month
 - [ ] Sticky sessions (if needed)
 
 ---
+
 ## Configuration Management - Ansible
 
 ### Decision: Ansible as Configuration Management Tool
@@ -2577,6 +2578,7 @@ Use Ansible for all post-provisioning configuration and application deployment.
 **Justification:**
 
 **Ansible advantages:**
+
 - Agentless (no software on managed nodes beyond Python and SSH)
 - Declarative YAML syntax (infrastructure as code)
 - Idempotent operations (safe to re-run)
@@ -2585,15 +2587,16 @@ Use Ansible for all post-provisioning configuration and application deployment.
 
 **Alternatives considered:**
 
-| Tool | Pros | Cons | Selected |
-|------|------|------|----------|
-| **Ansible** | Agentless, simple, idempotent | Slower than alternatives | ✅ Yes |
-| Chef | Fast, Ruby DSL | Requires agent, complex | ❌ No |
-| Puppet | Mature, enterprise features | Requires agent, steep learning curve | ❌ No |
-| Salt | Fast, scalable | Requires agent, less common | ❌ No |
-| Shell scripts | Simple, no dependencies | Not idempotent, error-prone | ❌ No |
+| Tool          | Pros                          | Cons                                 | Selected |
+| ------------- | ----------------------------- | ------------------------------------ | -------- |
+| **Ansible**   | Agentless, simple, idempotent | Slower than alternatives             | ✅ Yes   |
+| Chef          | Fast, Ruby DSL                | Requires agent, complex              | ❌ No    |
+| Puppet        | Mature, enterprise features   | Requires agent, steep learning curve | ❌ No    |
+| Salt          | Fast, scalable                | Requires agent, less common          | ❌ No    |
+| Shell scripts | Simple, no dependencies       | Not idempotent, error-prone          | ❌ No    |
 
 **Why not shell scripts:**
+
 - No idempotency (running twice causes problems)
 - No error handling
 - Hard to maintain
@@ -2605,6 +2608,7 @@ Use Ansible for all post-provisioning configuration and application deployment.
 
 **Context:**  
 Ansible can run from:
+
 1. Local developer machine (laptop)
 2. Dedicated Ansible server
 3. Bastion host
@@ -2613,6 +2617,7 @@ Ansible can run from:
 Run Ansible from Bastion Host.
 
 **Architecture:**
+
 ```
 Developer Laptop → SSH → Bastion (Ansible Control Node) → Backend Instances
 ```
@@ -2620,6 +2625,7 @@ Developer Laptop → SSH → Bastion (Ansible Control Node) → Backend Instance
 **Justification:**
 
 **Bastion as control node advantages:**
+
 - Already has Ansible installed (from Day 6 setup)
 - Direct network access to private subnets (no SSH proxying needed)
 - Simpler inventory configuration
@@ -2629,23 +2635,27 @@ Developer Laptop → SSH → Bastion (Ansible Control Node) → Backend Instance
 
 **Alternatives considered:**
 
-| Location | Pros | Cons | Selected |
-|----------|------|------|----------|
-| **Bastion** | Simple, realistic, already configured | Requires Git setup | ✅ Yes |
-| Local machine | Familiar workflow | Requires Ansible on Windows, complex SSH proxy | ❌ No |
-| Dedicated server | Production-grade | Unnecessary for learning project, additional cost | ❌ No |
+| Location         | Pros                                  | Cons                                              | Selected |
+| ---------------- | ------------------------------------- | ------------------------------------------------- | -------- |
+| **Bastion**      | Simple, realistic, already configured | Requires Git setup                                | ✅ Yes   |
+| Local machine    | Familiar workflow                     | Requires Ansible on Windows, complex SSH proxy    | ❌ No    |
+| Dedicated server | Production-grade                      | Unnecessary for learning project, additional cost | ❌ No    |
 
 **Trade-offs accepted:**
+
 - Repository must be cloned to Bastion
 - Changes committed from Bastion (or pushed from local)
 - Bastion becomes slight SPF (but acceptable for QA)
 
 **Why local machine was rejected:**
+
 - Installing Ansible on Windows requires WSL or Git Bash with Python
 - Inventory would need ProxyCommand for SSH jumping:
+
 ```ini
   ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p ec2-user@BASTION_IP"'
 ```
+
 - More complex, less realistic
 - Additional maintenance burden
 
@@ -2662,6 +2672,7 @@ Use INI format with separate files per environment.
 **Implementation:**
 
 **File structure:**
+
 ```
 ansible/inventory/
 ├── qa.ini
@@ -2669,6 +2680,7 @@ ansible/inventory/
 ```
 
 **QA inventory:**
+
 ```ini
 [backend]
 backend-1 ansible_host=10.0.11.71
@@ -2681,6 +2693,7 @@ ansible_python_interpreter=/usr/bin/python3
 ```
 
 **Key decisions:**
+
 - **Private IPs:** Backend instances in private subnets
 - **No ProxyCommand:** Not needed when running from Bastion
 - **Python 3:** Amazon Linux 2 default (Ansible requires Python on targets)
@@ -2688,13 +2701,14 @@ ansible_python_interpreter=/usr/bin/python3
 
 **Alternatives considered:**
 
-| Format | Pros | Cons | Selected |
-|--------|------|------|----------|
-| **INI** | Simple, readable, standard | Less flexible than YAML | ✅ Yes |
-| YAML | More features, nested structures | Overkill for simple inventory | ❌ No |
-| Dynamic inventory | Auto-discovers EC2 instances | Complex setup, not needed | ❌ No |
+| Format            | Pros                             | Cons                          | Selected |
+| ----------------- | -------------------------------- | ----------------------------- | -------- |
+| **INI**           | Simple, readable, standard       | Less flexible than YAML       | ✅ Yes   |
+| YAML              | More features, nested structures | Overkill for simple inventory | ❌ No    |
+| Dynamic inventory | Auto-discovers EC2 instances     | Complex setup, not needed     | ❌ No    |
 
 **Why not dynamic inventory:**
+
 - EC2 plugin requires AWS credentials and boto3
 - Adds complexity without benefit (only 2 instances)
 - Static inventory more predictable for learning
@@ -2709,6 +2723,7 @@ Ansible roles organize related tasks, handlers, templates, and variables into re
 
 **Decision:**  
 Implement modular role-based organization:
+
 ```
 roles/
 ├── common/       # Baseline configuration (all instances)
@@ -2717,6 +2732,7 @@ roles/
 ```
 
 **Common role responsibilities:**
+
 - System updates and security patches
 - Base tool installation (git, vim, curl, etc.)
 - Timezone configuration
@@ -2727,6 +2743,7 @@ roles/
 **Justification:**
 
 **Role-based advantages:**
+
 - **Reusability:** Common role applies to frontend, backend, database
 - **Maintainability:** Changes to baseline config in one place
 - **Clarity:** Each role has single responsibility
@@ -2734,6 +2751,7 @@ roles/
 - **Portability:** Roles can be shared across projects
 
 **Directory structure:**
+
 ```
 roles/common/
 ├── README.md         # Role documentation
@@ -2744,6 +2762,7 @@ roles/common/
 ```
 
 **Alternative (flat playbooks):**
+
 ```yaml
 # Anti-pattern: Everything in one playbook
 - name: Configure everything
@@ -2755,6 +2774,7 @@ roles/common/
 ```
 
 **Why roles are better:**
+
 - Logical separation
 - Can selectively apply (only nodejs to backend)
 - Easier collaboration (different team members own different roles)
@@ -2767,11 +2787,13 @@ roles/common/
 Encountered critical bug with Ansible 2.9 and package modules.
 
 **Problem:**
+
 ```
 The Python 2 bindings for rpm are needed for this module
 ```
 
 **Root cause:**
+
 - Bastion had Ansible 2.9 (installed via amazon-linux-extras)
 - Ansible 2.9 is EOL (end of life)
 - Known bugs when control node uses Python 2, targets use Python 3
@@ -2780,6 +2802,7 @@ The Python 2 bindings for rpm are needed for this module
 Upgrade to Ansible 2.11+ using pip3.
 
 **Implementation:**
+
 ```bash
 # Remove legacy version
 sudo yum remove -y ansible
@@ -2794,17 +2817,20 @@ ansible --version
 ```
 
 **Result:**
+
 - All package modules working correctly
 - Idempotency restored
 - No workarounds needed
 
 **Lesson learned:**
+
 - Always use supported Ansible versions (2.11+)
 - Avoid EOL software (security and bug risks)
 - Don't settle for workarounds (shell instead of package)
 - Control node and managed nodes should use same Python major version
 
 **Why shell workaround was rejected:**
+
 ```yaml
 # This works but is WRONG:
 - name: Update packages
@@ -2812,6 +2838,7 @@ ansible --version
 ```
 
 **Problems with shell:**
+
 - Not idempotent (always shows changed)
 - No error handling
 - Not declarative
@@ -2830,23 +2857,27 @@ Implement SSH hardening in common role.
 **Implementation:**
 
 **Changes to /etc/ssh/sshd_config:**
+
 1. `PermitRootLogin no` - Disable root login
 2. `PasswordAuthentication no` - Keys only (no passwords)
 
 **Justification:**
 
 **Disable root login:**
+
 - Root has unlimited privileges
 - Attackers target root account
 - Better: Use ec2-user + sudo
 
 **Disable password authentication:**
+
 - Passwords vulnerable to brute force
 - Keys cryptographically stronger
 - Keys can be rotated without changing password on every server
 - Industry standard for cloud servers
 
 **Handler for changes:**
+
 ```yaml
 - name: restart sshd
   systemd:
@@ -2855,11 +2886,13 @@ Implement SSH hardening in common role.
 ```
 
 **Why handler:**
+
 - SSH config changes require service restart
 - Handler runs only if config actually changed
 - Runs at end of playbook (not mid-execution, avoiding lockout)
 
 **Risk mitigation:**
+
 - Always test SSH key access BEFORE disabling passwords
 - Keep current SSH session open while testing
 - If locked out: Use AWS Systems Manager Session Manager as backup
@@ -2877,6 +2910,7 @@ Implement dynamic MOTD (Message of the Day) using Jinja2 template.
 **Implementation:**
 
 **Template:** `roles/common/templates/motd.j2`
+
 ```jinja2
 =====================================
    Movie Analyst Backend Server
@@ -2890,26 +2924,30 @@ Managed by Ansible - Do not modify manually
 ```
 
 **Variables used:**
+
 - `ansible_hostname`: Auto-discovered during fact gathering
 - `ansible_default_ipv4.address`: Primary IP address
 - `ansible_date_time.iso8601`: Timestamp of last Ansible run
 
 **Task:**
+
 ```yaml
 - name: Set custom MOTD banner
   template:
     src: motd.j2
     dest: /etc/motd
-    mode: '0644'
+    mode: "0644"
 ```
 
 **Benefits:**
+
 - Immediate server identification
 - Shows when Ansible last ran
 - Reminds not to make manual changes
 - Professional appearance
 
 **Alternative (static file):**
+
 ```yaml
 - name: Copy static MOTD
   copy:
@@ -2918,6 +2956,7 @@ Managed by Ansible - Do not modify manually
 ```
 
 **Why template is better:**
+
 - Dynamic (shows actual hostname and IP)
 - Updates automatically on each run
 - More informative
@@ -2933,11 +2972,13 @@ Playbooks can have many tasks. Sometimes you want to run subset.
 Implement meaningful tags for selective execution.
 
 **Tags implemented:**
+
 - `packages`: Package installation and updates
 - `system`: System configuration (timezone, NTP)
 - `security`: Security hardening (SSH config)
 
 **Usage examples:**
+
 ```bash
 # Run only security tasks
 ansible-playbook playbooks/common.yml --tags security
@@ -2950,12 +2991,14 @@ ansible-playbook playbooks/common.yml --tags "system,security"
 ```
 
 **Benefits:**
+
 - Faster iteration during development
 - Production hotfixes (skip non-critical tasks)
 - Testing specific changes
 - Clearer task organization
 
 **Best practices:**
+
 - Use descriptive tag names
 - Tag at task level, not play level
 - Document available tags in role README
@@ -2966,6 +3009,7 @@ ansible-playbook playbooks/common.yml --tags "system,security"
 ### Cost Optimization
 
 **Ansible-related costs:**
+
 - **Ansible software:** Free (open source)
 - **Bastion instance:** Already running (t3.micro, free tier)
 - **Additional storage:** Minimal (~100MB for Ansible + roles)
@@ -3006,9 +3050,767 @@ ansible-playbook playbooks/common.yml --tags "system,security"
    - Change approval workflow
 
 **Why not implemented for learning project:**
+
 - Adds complexity without educational value
 - Increases cost
 - Overkill for 2-instance environment
 - Current approach demonstrates core concepts
+
+---
+
+## Decision: Ansible Inventory Structure and Verification
+
+**Context:**  
+When deploying to AWS with dynamic IPs, there's risk of inventory misconfiguration leading to playbooks running on wrong instances.
+
+**Problem Encountered:**
+
+- Terraform outputs showed Frontend IPs: 10.0.1.210, 10.0.2.22
+- Terraform outputs showed Backend IPs: 10.0.11.79, 10.0.12.112
+- Initial inventory had these reversed
+- Ran playbooks before verification
+- Result: Frontend configured on backend instances and vice versa
+
+**Decision:**  
+Implement mandatory inventory verification step before any playbook execution.
+
+**Verification Process:**
+
+```bash
+# 1. Get IPs from Terraform
+terraform output frontend_private_ips
+terraform output backend_private_ips
+
+# 2. Verify Ansible inventory matches
+ansible all -m shell -a "hostname && ip addr show eth0 | grep 'inet '" -b
+
+# 3. Expected output:
+# frontend-1 should return: frontend-1-qa and 10.0.1.210
+# backend-1 should return: backend-1-qa and 10.0.11.79
+```
+
+**Justification:**
+
+- **Prevention:** Catches misconfigurations before they cause damage
+- **Speed:** 30-second check saves hours of debugging
+- **Confidence:** Provides certainty before running destructive operations
+- **Repeatability:** Works even when IPs change between destroy/apply cycles
+
+**Implementation:**
+Add to deployment checklist:
+
+```markdown
+## Pre-Deployment Checklist
+
+- [ ] Pull latest Terraform state: `terraform refresh`
+- [ ] Verify outputs match expectations: `terraform output`
+- [ ] Update Ansible inventory with correct IPs
+- [ ] **Verify inventory with hostname check**
+- [ ] Run Ansible playbooks
+```
+
+**Alternative Considered:**
+Use Ansible dynamic inventory (aws_ec2 plugin) to auto-discover instances by tags.
+
+**Why Rejected for This Project:**
+
+- Added complexity for 4 instances
+- Requires AWS IAM configuration
+- Static inventory sufficient for learning project
+- Dynamic inventory better for production with auto-scaling
+
+**For Production:**
+Would implement `aws_ec2` dynamic inventory:
+
+```yaml
+# inventory/aws_ec2.yml
+plugin: aws_ec2
+regions:
+  - us-east-1
+filters:
+  tag:Environment: prod
+  instance-state-name: running
+keyed_groups:
+  - key: tags.Role
+    prefix: role
+```
+
+---
+
+## Decision: Nginx as Reverse Proxy for Frontend
+
+**Context:**  
+Frontend Express app runs on port 3030, but users expect standard HTTP port 80.
+
+**Problem:**
+
+- Running Node.js directly on port 80 requires root privileges (security risk)
+- Express serves static files inefficiently
+- No HTTPS termination capability
+- Limited request filtering/rate limiting
+
+**Decision:**  
+Use Nginx as reverse proxy in front of Express app.
+
+**Architecture:**
+
+```
+Browser (port 80)
+  ↓
+Nginx (port 80)
+  ↓
+Express (port 3030)
+```
+
+**Nginx Configuration:**
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    # Frontend - Proxy to React app running on PM2
+    location / {
+        proxy_pass http://localhost:3030;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Backend API - Proxy to ALB
+    location /api/ {
+        proxy_pass http://qa-movie-analyst-alb.us-east-1.elb.amazonaws.com/;
+        rewrite ^/api/(.*) /$1 break;
+    }
+}
+```
+
+**Benefits:**
+
+1. **Security:** Node.js runs as non-root user
+2. **Performance:** Nginx handles static assets efficiently
+3. **Flexibility:** Easy to add caching, rate limiting, SSL
+4. **Standard:** Industry best practice (separation of concerns)
+5. **SSL Ready:** Can easily add Let's Encrypt certificate
+
+**Implementation Details:**
+
+- Nginx managed by Ansible
+- Configuration in `/etc/nginx/conf.d/movie-analyst.conf`
+- Handlers ensure Nginx restarts on config changes
+- PM2 manages Express app lifecycle
+
+**Gotcha Discovered:**
+Nginx doesn't auto-reload configuration. Need explicit restart:
+
+```yaml
+notify: restart nginx
+```
+
+Without restart, old configuration stays active even though new file exists.
+
+**Alternative Considered:**
+Run Express directly on port 80 with:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' /usr/bin/node
+```
+
+**Why Rejected:**
+
+- Security risk (grants capability to all Node processes)
+- Loses benefits of dedicated web server
+- Makes SSL/caching harder to implement
+- Not industry standard
+
+---
+
+## Decision: Manual Database Seeding vs Automated
+
+**Context:**  
+Application requires database populated with initial data (seed data for publications, reviewers, movies).
+
+**Options Evaluated:**
+
+### Option 1: Automated Seeding in Ansible
+
+```yaml
+- name: Run database seeds
+  command: node seeds.js
+  args:
+    chdir: "{{ app_directory }}"
+  environment:
+    DB_HOST: "{{ db_endpoint }}"
+    DB_PASS: "{{ db_password }}"
+  become_user: "{{ app_user }}"
+```
+
+**Pros:**
+
+- Fully automated deployment
+- Repeatable
+- No manual steps
+
+**Cons:**
+
+- Seeds would fail on re-runs (duplicate keys)
+- Need idempotency logic (`INSERT IGNORE` or `ON DUPLICATE KEY UPDATE`)
+- Harder to debug when things go wrong
+- Risk of data corruption if seeds run unexpectedly
+
+### Option 2: Manual Seeding (Selected)
+
+**Implementation:**
+
+```bash
+# One-time manual execution
+cd /opt/devops-rampup/movie-analyst-api
+export DB_HOST=...
+export DB_USER=admin
+export DB_PASS='...'
+export DB_NAME=movieanalyst
+node seeds.js
+```
+
+**Decision Rationale:**
+
+1. **Safety:** Won't accidentally corrupt data on re-deployment
+2. **Visibility:** Developer sees exactly what data is being inserted
+3. **Control:** Can choose when/if to re-seed
+4. **Simplicity:** No need for idempotency logic
+5. **Realistic:** Production databases aren't re-seeded automatically
+
+**When to Automate:**
+Would automate if:
+
+- Using proper migration tool (Flyway, Liquibase, Knex)
+- Migrations are idempotent by design
+- Have separate environments (dev/staging/prod)
+- Need frequent database resets (like in CI/CD testing)
+
+**For Production:**
+Would implement:
+
+```sql
+-- migrations/001_initial_schema.sql
+CREATE TABLE IF NOT EXISTS publications (...);
+CREATE TABLE IF NOT EXISTS reviewers (...);
+CREATE TABLE IF NOT EXISTS movies (...);
+
+-- migrations/002_seed_data.sql
+INSERT INTO publications (...)
+ON DUPLICATE KEY UPDATE name=VALUES(name);
+```
+
+With migration runner:
+
+```bash
+# Run all pending migrations
+npm run migrate:up
+```
+
+---
+
+## Decision: System Users for Application Services
+
+**Context:**  
+Need to create users to run PM2 and application processes.
+
+**Options:**
+
+### Option 1: Regular User
+
+```yaml
+- name: Create app user
+  user:
+    name: frontend
+    create_home: yes
+    shell: /bin/bash
+```
+
+### Option 2: System User (Selected)
+
+```yaml
+- name: Create app user
+  user:
+    name: frontend
+    create_home: yes
+    shell: /bin/bash
+    system: yes # Key difference
+```
+
+**Decision Rationale:**
+
+**System User Benefits:**
+
+1. **Security:** UID < 1000, less likely to conflict with real users
+2. **Convention:** Standard practice for service accounts
+3. **Visibility:** Clearly indicates non-human user
+4. **Restrictions:** Limited login capabilities by default
+
+**How to Use System Users:**
+
+```bash
+# In Ansible playbooks
+become_user: "{{ frontend_user }}"
+
+# Manually
+sudo -u frontend pm2 list
+
+# Through PM2 systemd
+sudo systemctl start pm2-frontend
+```
+
+**Gotcha Discovered:**
+System users work perfectly fine with PM2 and systemd. The `sudo: unknown user` error we encountered wasn't because of `system: yes` flag - it was because the user creation task hadn't run properly due to inventory issues.
+
+**Best Practice:**
+Always use system users for application services:
+
+```yaml
+services_users:
+  - { name: frontend, comment: "Frontend application user" }
+  - { name: backend, comment: "Backend application user" }
+  - { name: nginx, comment: "Nginx web server" }
+```
+
+**Alternative Considered:**
+Use single user (ec2-user) for all applications.
+
+**Why Rejected:**
+
+- **Security:** All apps would share same permissions
+- **Isolation:** Can't separate log files, PM2 processes
+- **Debugging:** Harder to identify which process belongs to which app
+- **Best Practice:** Violates principle of least privilege
+
+---
+
+## Cost Optimization Notes
+
+**Current Setup Costs (Monthly):**
+
+- 4x t3.micro instances: ~$7.50 (free tier: $0)
+- 1x t3.micro bastion: ~$7.50 (free tier: $0)
+- 1x ALB: ~$16
+- 1x NAT Gateway: ~$32
+- 1x RDS db.t3.micro: ~$15 (free tier: $0)
+- Data transfer: ~$5
+- **Total: ~$68/month** (or ~$0 with free tier)
+
+**Cost Optimization Applied:**
+
+1. **Frontend in Public Subnet:** Saved $32/month (no second NAT Gateway)
+2. **t3.micro over t2.micro:** Better performance, still free tier
+3. **Single NAT Gateway:** Used by both backend subnets
+4. **No CloudWatch detailed monitoring:** Saved ~$7/month
+
+**For Production:**
+
+- Add Auto Scaling (pay only for what you use)
+- Consider Reserved Instances (up to 75% discount)
+- Use CloudFront for static assets (reduce bandwidth costs)
+- Implement proper RDS backup strategy
+
+## Monitoring Architecture - CloudWatch
+
+### Decision: CloudWatch for Infrastructure Monitoring
+
+**Context:**  
+Need comprehensive monitoring and alerting for infrastructure health across EC2 instances, RDS database, and Application Load Balancer. Require visibility into performance metrics, resource utilization, and automatic alerting for anomalies.
+
+**Decision:**  
+Implement AWS CloudWatch with custom dashboards and metric-based alarms.
+
+**Alternatives Considered:**
+
+| Option               | Cost                     | Features                       | Integration  | Selected |
+| -------------------- | ------------------------ | ------------------------------ | ------------ | -------- |
+| **CloudWatch**       | ~$3-10/month             | Native AWS, dashboards, alarms | Seamless     | ✅ Yes   |
+| Datadog              | ~$15/host/month          | Advanced features, APM         | Good         | ❌ No    |
+| Prometheus + Grafana | ~$20/month (self-hosted) | Open source, flexible          | Manual setup | ❌ No    |
+| New Relic            | ~$25/month               | Full observability             | Good         | ❌ No    |
+
+**Justification:**
+
+**CloudWatch advantages:**
+
+- Native AWS integration (no agent installation required)
+- Free tier: 10 custom metrics, 10 alarms, 1M API requests
+- Automatic metric collection from EC2, RDS, ALB
+- Built-in dashboards with pre-configured widgets
+- Unified monitoring (all services in one place)
+- Simple alarm configuration with SNS integration
+
+**Why not third-party tools:**
+
+- Project scale doesn't justify additional cost ($15-25/month vs $3-10/month)
+- CloudWatch sufficient for basic monitoring needs
+- Avoid managing additional infrastructure (Prometheus/Grafana servers)
+- Native integration reduces configuration complexity
+
+---
+
+### Monitoring Module Structure
+
+**Implementation:**
+
+```
+terraform/modules/monitoring/
+├── main.tf           # Dashboards and alarms
+├── variables.tf      # Monitoring configuration
+├── outputs.tf        # Dashboard URLs, alarm ARNs
+└── sns.tf            # Optional SNS topic for alerts
+```
+
+---
+
+### CloudWatch Dashboards
+
+**Decision:**  
+Create unified dashboard with widgets for all infrastructure components.
+
+**Dashboard sections:**
+
+1. **ALB Metrics**
+   - Request count
+   - Target response time (average, p99)
+   - HTTP 4xx/5xx error rates
+   - Healthy/unhealthy target count
+   - Active connection count
+
+2. **EC2 Metrics (Frontend & Backend)**
+   - CPU utilization (%)
+   - Network in/out (bytes)
+   - Disk read/write operations
+   - Status check failures
+
+3. **RDS Metrics**
+   - CPU utilization (%)
+   - Database connections count
+   - Read/write IOPS
+   - Free storage space
+   - Replica lag (if Multi-AZ enabled in prod)
+
+**Widget configuration:**
+
+```hcl
+# Example: ALB Request Count
+widget {
+  type = "metric"
+  properties = {
+    metrics = [
+      ["AWS/ApplicationELB", "RequestCount",
+       "LoadBalancer", var.alb_arn_suffix]
+    ]
+    period = 300  # 5 minutes
+    stat   = "Sum"
+    region = "us-east-1"
+    title  = "ALB - Total Requests"
+  }
+}
+```
+
+**Benefits:**
+
+- Single-pane-of-glass visibility
+- Customizable time ranges (1h, 3h, 1d, 1w)
+- Auto-refresh every 60 seconds
+- Shareable URLs for team collaboration
+
+---
+
+### CloudWatch Alarms
+
+**Decision:**  
+Implement metric-based alarms with workspace-aware thresholds.
+
+**Alarms configured:**
+
+#### 1. EC2 CPU Utilization (All Instances)
+
+```hcl
+Metric: CPUUtilization
+Threshold: 80% (QA), 80% (Production)
+Evaluation periods: 2 consecutive periods
+Period: 5 minutes
+Actions: SNS notification (if enabled)
+```
+
+**Why 80% threshold:**
+
+- Indicates potential performance degradation
+- Allows time to investigate before reaching 100%
+- Standard industry practice for web servers
+- t3.micro instances can burst above baseline
+
+**Created for:**
+
+- 2 Frontend instances
+- 2 Backend instances
+- Total: 4 alarms
+
+---
+
+#### 2. RDS Database Connections
+
+```hcl
+Metric: DatabaseConnections
+Threshold: 80 connections (QA), 160 connections (Production)
+Evaluation periods: 2 consecutive periods
+Period: 5 minutes
+Actions: SNS notification (if enabled)
+```
+
+**Why connection monitoring:**
+
+- RDS max connections = `{DBInstanceClassMemory/12582880}` (formula)
+- db.t3.micro max connections ≈ 85-100
+- Threshold at 80% prevents connection exhaustion
+- Early warning of connection leaks in application
+
+**Workspace-aware thresholds:**
+
+| Workspace | Max Connections | Alarm Threshold | Percentage |
+| --------- | --------------- | --------------- | ---------- |
+| **qa**    | ~100            | 80              | 80%        |
+| **prod**  | ~200 (Multi-AZ) | 160             | 80%        |
+
+---
+
+#### 3. ALB Target Health (Implicit)
+
+**Automatic monitoring via target group health checks:**
+
+- ALB automatically monitors target health every 30 seconds
+- Unhealthy targets removed from rotation after 2 failed checks
+- No additional alarm needed (built into ALB behavior)
+- Visible in CloudWatch dashboard: `HealthyHostCount` metric
+
+---
+
+### SNS Topic for Alerts (Optional)
+
+**Decision:**  
+Create SNS topic but disable by default (cost optimization).
+
+**Configuration:**
+
+```hcl
+variable "enable_sns_alerts" {
+  default = false  # Disabled in both QA and Production
+}
+```
+
+**Why disabled:**
+
+- SNS costs: $0.50 per 1M notifications
+- Email delivery: Free (first 1,000 emails)
+- For learning project: Manual dashboard review sufficient
+- Can enable in production if needed: `enable_sns_alerts = true`
+
+**To enable SNS alerts:**
+
+```hcl
+# terraform/main.tf
+module "monitoring" {
+  # ...
+  enable_sns_alerts = true
+  alert_email       = "devops-team@example.com"
+}
+```
+
+**SNS workflow (when enabled):**
+
+1. CloudWatch alarm triggers (e.g., CPU > 80%)
+2. SNS topic receives notification
+3. Email sent to subscribed addresses
+4. Recipient clicks confirmation link (first time only)
+5. Future alarms arrive via email automatically
+
+---
+
+### Cost Analysis
+
+**CloudWatch pricing breakdown:**
+
+| Component           | QA Environment                        | Production Environment  |
+| ------------------- | ------------------------------------- | ----------------------- |
+| **Dashboards**      | $3/month (1 custom dashboard)         | $3/month                |
+| **Alarms**          | Free (5 alarms, within 10 free limit) | Free (5 alarms)         |
+| **Metrics**         | Free (all standard metrics)           | Free (standard metrics) |
+| **API Requests**    | Free (< 1M/month)                     | Free (< 1M/month)       |
+| **SNS**             | $0 (disabled)                         | $0 (disabled)           |
+| **Logs (optional)** | Not implemented                       | Not implemented         |
+| **Total**           | **$3/month**                          | **$3/month**            |
+
+**Free tier benefits:**
+
+- 10 alarms (we use 5)
+- 10 metrics (we use standard AWS metrics only)
+- 1M API requests
+- 5GB log ingestion (not used)
+- 3 dashboards (we use 1)
+
+**Cost after free tier (first 12 months):**
+
+- Same costs apply (CloudWatch free tier is permanent for standard metrics)
+- Alarms free tier: 10 alarms always free
+- Dashboards: $3/month per dashboard (always charged)
+
+**Comparison with alternatives:**
+
+| Monitoring Tool | Monthly Cost        | Features Used                        |
+| --------------- | ------------------- | ------------------------------------ |
+| **CloudWatch**  | $3                  | Dashboards, alarms, standard metrics |
+| Datadog         | $30 (2 hosts × $15) | Overkill for project                 |
+| New Relic       | $50                 | Overkill for project                 |
+
+---
+
+### Workspace Configuration Strategy
+
+**Question examined:** Should monitoring be production-only or environment-agnostic?
+
+**Decision:**  
+Deploy monitoring in both QA and Production workspaces.
+
+**Justification:**
+
+**QA monitoring benefits:**
+
+- Test alarm behavior before production deployment
+- Identify performance issues during development
+- Validate application resource usage patterns
+- Practice incident response procedures
+- Ensure monitoring configuration works correctly
+
+**Workspace differences:**
+
+| Aspect               | QA                             | Production            |
+| -------------------- | ------------------------------ | --------------------- |
+| **Dashboard**        | Created                        | Created               |
+| **Alarms**           | Created                        | Created               |
+| **SNS alerts**       | Disabled                       | Disabled (can enable) |
+| **Metric retention** | 15 months (CloudWatch default) | 15 months             |
+| **Cost**             | $3/month                       | $3/month              |
+
+**No workspace-specific logic needed:**
+
+- Same dashboard configuration for both environments
+- Same alarm thresholds (80% CPU, 80% DB connections)
+- Environment identification via resource tags
+- Cost negligible ($3/month vs total budget)
+
+**Alternative considered:**
+
+- Production-only monitoring → Rejected because:
+  - Misses opportunity to test monitoring in QA
+  - Increases risk of misconfigured production alarms
+  - Minimal cost savings ($3/month)
+  - Violates principle of environment parity
+
+---
+
+### Monitoring Best Practices Implemented
+
+**1. Metric-based alerting:**
+
+- Thresholds based on resource capacity (80% rule)
+- Multiple evaluation periods prevent false positives
+- Clear alarm naming: `{environment}-{resource}-{metric}-alarm`
+
+**2. Dashboard organization:**
+
+- Logical grouping: ALB → EC2 → RDS
+- Consistent widget sizing
+- Relevant time ranges (1h default, customizable)
+- Auto-refresh enabled
+
+**3. Alarm fatigue prevention:**
+
+- Only critical metrics alarmed (CPU, connections)
+- 2 consecutive periods required (5 min × 2 = 10 min sustained issue)
+- SNS disabled to avoid notification overload during testing
+
+**4. Cost optimization:**
+
+- Use standard metrics (free)
+- No custom metrics (would cost $0.30/metric/month)
+- No CloudWatch Logs ingestion (would cost $0.50/GB)
+- Single consolidated dashboard ($3 vs $9 for 3 separate dashboards)
+
+**5. Observability principles:**
+
+- Metrics for what is happening (quantitative)
+- Dashboards for visualization (trends over time)
+- Alarms for actionable alerts (threshold breaches)
+
+---
+
+### Security Considerations
+
+**IAM permissions required:**
+
+- Terraform execution role needs: `cloudwatch:PutMetricAlarm`, `cloudwatch:PutDashboard`
+- EC2 instances use CloudWatch agent (not implemented): Would need `cloudwatch:PutMetricData`
+- SNS topic access (if enabled): `sns:Publish` for CloudWatch
+
+**Dashboard access control:**
+
+- Dashboard URLs are publicly accessible (with URL knowledge)
+- No sensitive data exposed (only metric aggregates)
+- For production: Consider restricting via IAM policies
+
+**Alarm actions:**
+
+- Alarms can only trigger SNS topics in same account
+- SNS topic email subscriptions require confirmation
+- No auto-remediation actions configured (safety measure)
+
+---
+
+### Future Enhancements (Not Implemented)
+
+**Phase 1 (Current):**
+
+- ✅ Basic dashboards
+- ✅ CPU and connection alarms
+- ✅ Standard AWS metrics
+
+**Phase 2 (Production Hardening):**
+
+- [ ] CloudWatch Logs for application logs
+- [ ] Log insights queries for error tracking
+- [ ] Custom metrics (application-level)
+- [ ] Composite alarms (multiple conditions)
+
+**Phase 3 (Advanced Observability):**
+
+- [ ] X-Ray tracing for request flow
+- [ ] Application Performance Monitoring (APM)
+- [ ] Anomaly detection (machine learning-based)
+- [ ] Auto-remediation via Lambda
+
+**Why not implemented:**
+
+- Project scope focuses on infrastructure basics
+- Cost considerations ($5-20/month additional)
+- Time constraints (2-3 days remaining)
+- Sufficient for learning objectives
+
+---
+
+### Key Decisions Summary
+
+1. **Monitoring tool:** CloudWatch (native AWS, cost-effective)
+2. **Dashboard strategy:** Single unified dashboard for all components
+3. **Alarm coverage:** CPU (EC2) and connections (RDS) only
+4. **SNS alerts:** Disabled by default (can enable if needed)
+5. **Workspace deployment:** Both QA and Production (testing parity)
+6. **Cost target:** $3/month (within budget)
+7. **Metric types:** Standard AWS metrics only (no custom metrics)
 
 ---
