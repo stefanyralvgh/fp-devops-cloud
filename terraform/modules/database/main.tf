@@ -82,7 +82,7 @@ module "rds" {
   multi_az = var.environment == "prod" ? true : false
 
   # Backup configuration (workspace-aware)
-  backup_retention_period = var.environment == "prod" ? 7 : 1
+  backup_retention_period = 1
   backup_window           = "03:00-04:00"
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
