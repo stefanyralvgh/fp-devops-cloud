@@ -1,11 +1,11 @@
 ---
-- name: Create backend user
-  user:
-    name: "{{ app_user }}"
-    comment: "Backend application user"
-    shell: /bin/bash
-    create_home: yes
-    system: yes
+# - name: Create backend user
+#   user:
+#     name: "{{ app_user }}"
+#     comment: "Backend application user"
+#     shell: /bin/bash
+#     create_home: yes
+#     system: yes
 
 - name: Create /opt directory
   file:
@@ -13,7 +13,7 @@
     state: directory
     owner: root
     group: root
-    mode: '0755'
+    mode: "0755"
   become: yes
 
 - name: Remove existing repository if present
@@ -28,7 +28,7 @@
     state: directory
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
-    mode: '0755'
+    mode: "0755"
   become: yes
 
 - name: Clone devops-rampup repository
@@ -39,7 +39,7 @@
     force: yes
     accept_hostkey: yes
   environment:
-    GIT_TERMINAL_PROMPT: '0'
+    GIT_TERMINAL_PROMPT: "0"
   become_user: "{{ app_user }}"
   notify: restart pm2 app
 
@@ -74,5 +74,5 @@
     dest: "{{ app_directory }}/ecosystem.config.js"
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
-    mode: '0644'
+    mode: "0644"
   notify: restart pm2 app
