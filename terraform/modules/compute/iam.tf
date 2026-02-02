@@ -194,3 +194,27 @@ resource "aws_iam_instance_profile" "frontend" {
     ManagedBy   = "Terraform"
   }
 }
+
+resource "aws_iam_role_policy" "backend_s3" {
+  name = "s3-assets-access"
+  role = aws_iam_role.backend.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.environment}-movie-analyst-assets",
+          "arn:aws:s3:::${var.environment}-movie-analyst-assets/*"
+        ]
+      }
+    ]
+  })
+}
