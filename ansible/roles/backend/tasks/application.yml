@@ -76,4 +76,5 @@
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
     mode: "0644"
+    force: yes
   notify: restart pm2 app
