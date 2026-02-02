@@ -421,6 +421,7 @@ cd ~/fp-devops-cloud/ansible
 # Create vault password file (choose a strong password)
 echo "your-vault-password" > .vault_pass
 chmod 600 .vault_pass
+ls -la .vault_pass
 
 # Create encrypted vault file
 ansible-vault create inventory/group_vars/backend/vault.yml
@@ -479,15 +480,12 @@ frontend-2 | SUCCESS => { "ping": "pong" }
 
 **Note:** The playbook will automatically load environment-specific variables from `inventory/group_vars/frontend/qa.yml` based on the `environment` variable set in the inventory file.
 
-````bash
-ansible-playbook playbooks/frontend.yml --ask-vault-pass
-
 ```bash
 # QA
 ansible-playbook playbooks/frontend.yml \
   -i inventory/qa.ini \
   --ask-vault-pass
-````
+```
 
 ```bash
 # PROD
