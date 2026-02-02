@@ -9,6 +9,8 @@ tfplan*
 terraform.tfvars
 crash.log
 outputs.txt
+outputs-qa.txt
+outputs-prod.txt*
 
 # Ansible
 *.retry

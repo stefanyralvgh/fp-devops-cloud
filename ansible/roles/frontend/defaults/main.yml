@@ -16,7 +16,7 @@ frontend_group: "frontend"
 frontend_port: 3030
 
 # Backend connection (via ALB)
-backend_alb_dns: "qa-movie-analyst-alb-44480347.us-east-1.elb.amazonaws.com"
+backend_alb_dns: "qa-movie-analyst-alb-658422349.us-east-1.elb.amazonaws.com"
 
 # Node.js version
 nodejs_version: "16"
