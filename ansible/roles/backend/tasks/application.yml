@@ -5,7 +5,8 @@
     comment: "Backend application user"
     shell: /bin/bash
     create_home: yes
-    system: yes
+    system: no
+  become: yes
 
 - name: Create /opt directory
   file:
