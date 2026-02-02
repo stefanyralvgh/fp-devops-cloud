@@ -1,4 +1,11 @@
 ---
+- name: Install PM2 globally
+  npm:
+    name: pm2
+    global: true
+    state: present
+  become: true
+
 - name: Ensure PM2 directories exist
   file:
     path: "/home/{{ app_user }}/.pm2/{{ item }}"
