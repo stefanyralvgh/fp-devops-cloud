@@ -313,43 +313,78 @@ backend-2 ansible_host=10.0.12.XXX   # ← Replace with actual IP
 frontend-1 ansible_host=10.0.1.XXX   # ← Replace with actual IP
 frontend-2 ansible_host=10.0.2.XXX   # ← Replace with actual IP
 
-[backend:vars]
+[all:vars]
 ansible_user=ec2-user
 ansible_ssh_private_key_file=~/.ssh/movie-analyst-bastion-key
 ansible_python_interpreter=/usr/bin/python2
 environment=qa
-db_endpoint=qa-movie-analyst-db.XXXXXX.us-east-1.rds.amazonaws.com   # ← Replace
-
-[frontend:vars]
-ansible_user=ec2-user
-ansible_ssh_private_key_file=~/.ssh/movie-analyst-bastion-key
-ansible_python_interpreter=/usr/bin/python2
-alb_dns_name=qa-movie-analyst-alb-XXXXXX.us-east-1.elb.amazonaws.com   # ← Replace
 ```
 
 Save: **Ctrl+O** → **Enter** → **Ctrl+X**
 
-#### 3.3 Update Frontend ALB Configuration
+#### 3.3 Configure Environment-Specific Variables
 
-**File:** `ansible/roles/frontend/defaults/main.yml`
+Ansible uses separate variable files for each environment to manage environment-specific configurations like ALB DNS and database endpoints.
+
+**Create QA-specific frontend variables:**
 
 ```bash
-nano roles/frontend/defaults/main.yml
+nano inventory/group_vars/frontend/qa.yml
 ```
 
-Update line:
+Add:
 
 ```yaml
+---
+# QA Frontend Configuration
 backend_alb_dns: "qa-movie-analyst-alb-XXXXXX.us-east-1.elb.amazonaws.com" # ← Replace
 ```
 
-Save and exit.
+**Create QA-specific backend variables:**
+
+```bash
+nano inventory/group_vars/backend/qa.yml
+```
+
+Add:
+
+```yaml
+---
+# QA Backend Configuration
+db_endpoint: "qa-movie-analyst-db.XXXXXX.us-east-1.rds.amazonaws.com" # ← Replace
+```
+
+**For Production, create similar files:**
+
+```bash
+# Production frontend
+nano inventory/group_vars/frontend/prod.yml
+```
+
+```yaml
+---
+# Production Frontend Configuration
+backend_alb_dns: "prod-movie-analyst-alb-XXXXXX.us-east-1.elb.amazonaws.com" # ← Replace
+```
+
+```bash
+# Production backend
+nano inventory/group_vars/backend/prod.yml
+```
+
+```yaml
+---
+# Production Backend Configuration
+db_endpoint: "prod-movie-analyst-db.XXXXXX.us-east-1.rds.amazonaws.com" # ← Replace
+```
+
+Save all files: **Ctrl+O** → **Enter** → **Ctrl+X**
 
 #### 3.4 Commit and Push Changes
 
 ```bash
-git add inventory/qa.ini roles/frontend/defaults/main.yml
-git commit -m "Update QA inventory with actual IPs"
+git add inventory/qa.ini inventory/group_vars/frontend/qa.yml inventory/group_vars/backend/qa.yml
+git commit -m "Configure QA inventory and environment variables"
 git push origin develop
 ```
 
@@ -442,10 +477,17 @@ frontend-2 | SUCCESS => { "ping": "pong" }
 
 #### 5.2 Deploy Frontend
 
+**Note:** The playbook will automatically load environment-specific variables from `inventory/group_vars/frontend/qa.yml` based on the `environment` variable set in the inventory file.
+
+````bash
+ansible-playbook playbooks/frontend.yml --ask-vault-pass
+
 ```bash
 # QA
-ansible-playbook playbooks/frontend.yml --ask-vault-pass
-```
+ansible-playbook playbooks/frontend.yml \
+  -i inventory/qa.ini \
+  --ask-vault-pass
+````
 
 ```bash
 # PROD
@@ -771,6 +813,7 @@ _Note: Production deployment follows the same steps as QA with workspace-specifi
 | Deletion Protection | Disabled      | Enabled          |
 | Monitoring Interval | Basic (5 min) | Enhanced (1 min) |
 | Estimated Cost      | ~$30/month    | ~$50/month       |
+|  |
 
 ### Production Deployment Steps
 
@@ -789,11 +832,18 @@ terraform apply
 # 4. Follow Steps 2-10 from QA deployment
 #    Replace "qa" with "prod" in all configurations
 
-# 5. Update inventory file: inventory/prod.ini
+# 5. Configure production-specific variables
+# Create inventory/group_vars/frontend/prod.yml
+# Create inventory/group_vars/backend/prod.yml
+# (See Step 3.3 for structure)
 
-# 6. Update vault: group_vars/prod/vault.yml
+# 6. Update inventory file: inventory/prod.ini
 
-# 7. Deploy with Ansible
+# 7. Create production vault: group_vars/backend/vault.yml
+
+# 8. Deploy with Ansible
+ansible-playbook playbooks/frontend.yml -i inventory/prod.ini --ask-vault-pass
+ansible-playbook playbooks/backend.yml -i inventory/prod.ini --ask-vault-pass
 ```
 
 ---

@@ -2,7 +2,7 @@
 - name: Deploy Movie Analyst Frontend
   hosts: frontend
   become: yes
-  
+  vars_files:
+    - "../inventory/group_vars/frontend/{{ environment }}.yml"
   roles:
-    - common
     - frontend

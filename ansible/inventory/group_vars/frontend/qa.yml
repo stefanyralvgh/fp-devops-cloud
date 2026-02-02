@@ -1,0 +1,3 @@
+---
+# Backend connection (via ALB)
+backend_alb_dns: "qa-movie-analyst-alb-XXXX.us-east-1.elb.amazonaws.com"
