@@ -2,7 +2,7 @@
 # Common role - System baseline configuration
 # Amazon Linux 2 + Ansible 2.10 compatible
 
-# Bootstrap (sin Python dependency)
+# Bootstrap
 - name: Bootstrap Python
   raw: yum install -y python3 python3-pip
   changed_when: false
@@ -11,7 +11,6 @@
 - name: Gather facts after bootstrap
   setup:
   tags: bootstrap
-
 
 # System baseline (legacy-safe)
 
@@ -31,22 +30,21 @@
   command: systemctl enable --now chronyd
   tags: system
 
-
-# Security hardening (estos módulos SÍ están bien)
+# Security hardening
 
 - name: Disable root login via SSH
   lineinfile:
     path: /etc/ssh/sshd_config
-    regexp: '^PermitRootLogin'
-    line: 'PermitRootLogin no'
+    regexp: "^PermitRootLogin"
+    line: "PermitRootLogin no"
   notify: restart sshd
   tags: security
 
 - name: Disable password authentication
   lineinfile:
     path: /etc/ssh/sshd_config
-    regexp: '^PasswordAuthentication'
-    line: 'PasswordAuthentication no'
+    regexp: "^PasswordAuthentication"
+    line: "PasswordAuthentication no"
   notify: restart sshd
   tags: security
 
@@ -54,5 +52,5 @@
   template:
     src: motd.j2
     dest: /etc/motd
-    mode: '0644'
+    mode: "0644"
   tags: system
