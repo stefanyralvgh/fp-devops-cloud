@@ -1,11 +1,11 @@
 ---
-# - name: Create backend user
-#   user:
-#     name: "{{ app_user }}"
-#     comment: "Backend application user"
-#     shell: /bin/bash
-#     create_home: yes
-#     system: yes
+- name: Create backend user
+  user:
+    name: "{{ app_user }}"
+    comment: "Backend application user"
+    shell: /bin/bash
+    create_home: yes
+    system: yes
 
 - name: Create /opt directory
   file:
