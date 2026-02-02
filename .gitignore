@@ -31,7 +31,7 @@ Thumbs.db
 # Secrets
 *secret*
 *credentials*
-.vault_pass
+.vault_pass*
 
 # Keys
 *.pem
