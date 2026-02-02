@@ -517,14 +517,12 @@ frontend-2 : ok=25 changed=8 unreachable=0 failed=0
 
 ```bash
 # QA
-ansible-playbook playbooks/backend.yml --ask-vault-pass
+ansible-playbook -i inventory/qa.ini playbooks/backend.yml --ask-vault-pass
 ```
 
 ```bash
 # PROD
-ansible-playbook playbooks/backend.yml \
-  -i inventory/prod.ini \
-  --ask-vault-pass
+ansible-playbook -i inventory/prod.ini playbooks/backend.yml --ask-vault-pass
 ```
 
 - **Vault password prompt:** Enter vault password

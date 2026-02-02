@@ -1,3 +1,4 @@
 ---
 # Environment-specific backend variables for Prod
-db_endpoint: "prod-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com"
+# Conditional DB endpoint based on environment
+db_endpoint: "{{ environment }}-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com"
