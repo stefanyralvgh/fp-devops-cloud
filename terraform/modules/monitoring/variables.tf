@@ -1,4 +1,3 @@
-
 variable "project_name" {
   description = "Name of the project"
   type        = string
@@ -9,16 +8,13 @@ variable "environment" {
   type        = string
 }
 
-
-
-
 variable "alb_arn_suffix" {
-  description = "ARN suffix of the Application Load Balancer"
+  description = "ALB ARN suffix for CloudWatch metrics"
   type        = string
 }
 
 variable "target_group_arn_suffix" {
-  description = "ARN suffix of the backend target group"
+  description = "Backend target group ARN suffix for health metrics"
   type        = string
 }
 
@@ -36,9 +32,6 @@ variable "rds_instance_id" {
   description = "RDS instance identifier"
   type        = string
 }
-
-
-# ALARM CONFIGURATION
 
 variable "cpu_alarm_threshold" {
   description = "CPU utilization threshold for alarms (%)"
@@ -63,9 +56,6 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
-
-
-# TAGS
 
 variable "tags" {
   description = "Common tags for all resources"

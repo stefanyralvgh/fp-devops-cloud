@@ -114,13 +114,13 @@ cp ~/.ssh/movie-analyst-bastion-key.pub terraform/keys/
 
 **Components:**
 
-| Component    | Description                             |
-| ------------ | --------------------------------------- |
-| **ALB**      | Routes traffic to frontend instances    |
-| **Frontend** | Nginx serving React application         |
-| **Backend**  | Node.js API (PM2 process manager)       |
-| **RDS**      | MySQL 8.0 database                      |
-| **Bastion**  | SSH jump host for infrastructure access |
+| Component    | Description                                           |
+| ------------ | ----------------------------------------------------- |
+| **ALB**      | Routes API traffic to backend instances               |
+| **Frontend** | Express server (port 3030) behind Nginx reverse proxy |
+| **Backend**  | Node.js API (port 3000, PM2 process manager)          |
+| **RDS**      | MySQL 8.0 database                                    |
+| **Bastion**  | SSH jump host for infrastructure access               |
 
 ---
 

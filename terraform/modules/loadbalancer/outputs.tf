@@ -14,20 +14,17 @@ output "zone_id" {
 }
 
 output "target_group_arn" {
-  description = "ARN of the frontend target group"
+  description = "ARN of the backend target group"
   value       = module.alb.target_group_arns[0]
 }
 
-
-# Monitoring Outputs
-
+# NUEVOS OUTPUTS PARA MONITORING
 output "alb_arn_suffix" {
-  description = "ARN suffix of the Application Load Balancer (for CloudWatch metrics)"
+  description = "ALB ARN suffix for CloudWatch (e.g., app/name/abc123)"
   value       = join("/", slice(split("/", module.alb.lb_arn), 1, 4))
 }
 
-
 output "target_group_arn_suffix" {
-  description = "ARN suffix of the frontend target group (for CloudWatch metrics)"
+  description = "Target group ARN suffix for CloudWatch"
   value       = join("/", slice(split("/", module.alb.target_group_arns[0]), 1, 3))
 }

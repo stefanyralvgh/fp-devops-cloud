@@ -7,19 +7,18 @@ resource "aws_cloudwatch_dashboard" "main" {
     widgets = [
       # ROW 1: ALB METRICS
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 0
+        y      = 0
         properties = {
           metrics = [
-            ["AWS/ApplicationELB", "RequestCount", {
-              stat  = "Sum"
-              label = "Total Requests"
-            }],
-            [".", "TargetResponseTime", {
-              stat  = "Average"
-              label = "Avg Response Time"
-            }]
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", var.alb_arn_suffix],
+            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", var.alb_arn_suffix]
           ]
           period = 300
+          stat   = "Average"
           region = data.aws_region.current.name
           title  = "ALB - Requests & Response Time"
           yAxis = {
@@ -28,25 +27,20 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 0
-        y      = 0
       },
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 12
+        y      = 0
         properties = {
           metrics = [
-            ["AWS/ApplicationELB", "HealthyHostCount", {
-              stat  = "Average"
-              label = "Healthy Targets"
-            }],
-            [".", "UnHealthyHostCount", {
-              stat  = "Average"
-              label = "Unhealthy Targets"
-            }]
+            ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", var.target_group_arn_suffix],
+            ["AWS/ApplicationELB", "UnHealthyHostCount", "TargetGroup", var.target_group_arn_suffix]
           ]
           period = 60
+          stat   = "Average"
           region = data.aws_region.current.name
           title  = "ALB - Target Health"
           yAxis = {
@@ -56,25 +50,22 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 12
-        y      = 0
       },
 
       # ROW 2: EC2 FRONTEND METRICS
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 0
+        y      = 6
         properties = {
           metrics = [
-            for idx, instance_id in var.frontend_instance_ids : [
-              "AWS/EC2",
-              "CPUUtilization",
-              { dimension = { InstanceId = instance_id } },
-              { stat = "Average", label = "Frontend-${idx + 1}" }
-            ]
+            for instance_id in var.frontend_instance_ids :
+            ["AWS/EC2", "CPUUtilization", "InstanceId", instance_id]
           ]
           period = 300
+          stat   = "Average"
           region = data.aws_region.current.name
           title  = "Frontend Instances - CPU Utilization"
           yAxis = {
@@ -85,23 +76,20 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 0
-        y      = 6
       },
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 12
+        y      = 6
         properties = {
           metrics = [
-            for idx, instance_id in var.frontend_instance_ids : [
-              "AWS/EC2",
-              "NetworkIn",
-              { dimension = { InstanceId = instance_id } },
-              { stat = "Sum", label = "Frontend-${idx + 1}" }
-            ]
+            for instance_id in var.frontend_instance_ids :
+            ["AWS/EC2", "NetworkIn", "InstanceId", instance_id]
           ]
           period = 300
+          stat   = "Sum"
           region = data.aws_region.current.name
           title  = "Frontend Instances - Network In"
           yAxis = {
@@ -110,25 +98,22 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 12
-        y      = 6
       },
 
       # ROW 3: EC2 BACKEND METRICS
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 0
+        y      = 12
         properties = {
           metrics = [
-            for idx, instance_id in var.backend_instance_ids : [
-              "AWS/EC2",
-              "CPUUtilization",
-              { dimension = { InstanceId = instance_id } },
-              { stat = "Average", label = "Backend-${idx + 1}" }
-            ]
+            for instance_id in var.backend_instance_ids :
+            ["AWS/EC2", "CPUUtilization", "InstanceId", instance_id]
           ]
           period = 300
+          stat   = "Average"
           region = data.aws_region.current.name
           title  = "Backend Instances - CPU Utilization"
           yAxis = {
@@ -139,23 +124,20 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 0
-        y      = 12
       },
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 12
+        y      = 12
         properties = {
           metrics = [
-            for idx, instance_id in var.backend_instance_ids : [
-              "AWS/EC2",
-              "NetworkOut",
-              { dimension = { InstanceId = instance_id } },
-              { stat = "Sum", label = "Backend-${idx + 1}" }
-            ]
+            for instance_id in var.backend_instance_ids :
+            ["AWS/EC2", "NetworkOut", "InstanceId", instance_id]
           ]
           period = 300
+          stat   = "Sum"
           region = data.aws_region.current.name
           title  = "Backend Instances - Network Out"
           yAxis = {
@@ -164,24 +146,21 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 12
-        y      = 12
       },
 
       # ROW 4: RDS METRICS
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 0
+        y      = 18
         properties = {
           metrics = [
-            ["AWS/RDS", "CPUUtilization", {
-              dimension = { DBInstanceIdentifier = var.rds_instance_id }
-              stat      = "Average"
-              label     = "CPU Usage"
-            }]
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", var.rds_instance_id]
           ]
           period = 300
+          stat   = "Average"
           region = data.aws_region.current.name
           title  = "RDS - CPU Utilization"
           yAxis = {
@@ -192,22 +171,19 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 0
-        y      = 18
       },
       {
-        type = "metric"
+        type   = "metric"
+        width  = 12
+        height = 6
+        x      = 12
+        y      = 18
         properties = {
           metrics = [
-            ["AWS/RDS", "DatabaseConnections", {
-              dimension = { DBInstanceIdentifier = var.rds_instance_id }
-              stat      = "Average"
-              label     = "Active Connections"
-            }]
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", var.rds_instance_id]
           ]
           period = 60
+          stat   = "Average"
           region = data.aws_region.current.name
           title  = "RDS - Database Connections"
           yAxis = {
@@ -217,27 +193,20 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 12
-        height = 6
-        x      = 12
-        y      = 18
       },
       {
-        type = "metric"
+        type   = "metric"
+        width  = 24
+        height = 6
+        x      = 0
+        y      = 24
         properties = {
           metrics = [
-            ["AWS/RDS", "FreeableMemory", {
-              dimension = { DBInstanceIdentifier = var.rds_instance_id }
-              stat      = "Average"
-              label     = "Free Memory"
-            }],
-            [".", "FreeStorageSpace", {
-              dimension = { DBInstanceIdentifier = var.rds_instance_id }
-              stat      = "Average"
-              label     = "Free Storage"
-            }]
+            ["AWS/RDS", "FreeableMemory", "DBInstanceIdentifier", var.rds_instance_id],
+            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", var.rds_instance_id]
           ]
           period = 300
+          stat   = "Average"
           region = data.aws_region.current.name
           title  = "RDS - Memory & Storage"
           yAxis = {
@@ -246,24 +215,15 @@ resource "aws_cloudwatch_dashboard" "main" {
             }
           }
         }
-        width  = 24
-        height = 6
-        x      = 0
-        y      = 24
       }
     ]
   })
-
 }
 
-
 # DATA SOURCE FOR CURRENT REGION
-
 data "aws_region" "current" {}
 
-
 # SNS TOPIC FOR ALARMS (OPTIONAL)
-
 resource "aws_sns_topic" "alarms" {
   count = var.enable_sns_alerts ? 1 : 0
 
@@ -286,10 +246,7 @@ resource "aws_sns_topic_subscription" "alarms_email" {
   endpoint  = var.alert_email
 }
 
-
-
 # CLOUDWATCH ALARMS - EC2 CPU
-
 resource "aws_cloudwatch_metric_alarm" "frontend_cpu_high" {
   count = length(var.frontend_instance_ids)
 
@@ -350,10 +307,7 @@ resource "aws_cloudwatch_metric_alarm" "backend_cpu_high" {
   )
 }
 
-
-
 # CLOUDWATCH ALARMS - RDS
-
 resource "aws_cloudwatch_metric_alarm" "rds_connections_high" {
   alarm_name          = "${var.environment}-rds-connections-high"
   alarm_description   = "Alert when RDS connections exceed ${var.rds_connections_threshold}"
