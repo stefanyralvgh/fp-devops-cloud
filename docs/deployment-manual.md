@@ -2,7 +2,7 @@
 
 **Project:** Cloud Migration with Terraform & Ansible  
 **Environments:** QA, Production  
-**Last Updated:** January 29, 2026
+**Last Updated:** February 2, 2026
 
 ---
 
@@ -198,6 +198,7 @@ terraform apply
   - 5 EC2 instances (1 Bastion, 2 Frontend, 2 Backend)
   - RDS MySQL instance
   - Application Load Balancer
+  - S3 bucket for static assets
   - CloudWatch Dashboard + 5 Alarms
 
 #### 1.6 Capture Terraform Outputs
@@ -211,6 +212,7 @@ Save these values (needed later):
 - `bastion_public_ip`
 - `alb_dns_name`
 - `db_endpoint`
+- `assets_bucket_name`
 - Backend private IPs
 - Frontend private IPs
 
@@ -267,13 +269,13 @@ Environment: qa
 # From Bastion terminal
 git clone https://github.com/stefanyralvgh/fp-devops-cloud.git
 cd fp-devops-cloud
-git checkout develop # (skip these for prod)
+git checkout develop
 cd ansible
 ```
 
 **Authentication:**
 
-- **Username:** stefanyralvgh (or your GitHub username)
+- **Username:** Your GitHub username
 - **Password:** [GitHub Personal Access Token]
 
 **Troubleshooting:**
@@ -313,82 +315,31 @@ backend-2 ansible_host=10.0.12.XXX   # ← Replace with actual IP
 frontend-1 ansible_host=10.0.1.XXX   # ← Replace with actual IP
 frontend-2 ansible_host=10.0.2.XXX   # ← Replace with actual IP
 
-[all:vars]
+[backend:vars]
 ansible_user=ec2-user
 ansible_ssh_private_key_file=~/.ssh/movie-analyst-bastion-key
 ansible_python_interpreter=/usr/bin/python2
+db_endpoint=qa-movie-analyst-db.XXXXXX.us-east-1.rds.amazonaws.com  # ← Replace
+
+[frontend:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=~/.ssh/movie-analyst-bastion-key
+ansible_python_interpreter=/usr/bin/python2
+alb_dns_name=qa-movie-analyst-alb-XXXXXX.us-east-1.elb.amazonaws.com  # ← Replace
+
+[all:vars]
 environment=qa
 ```
 
 Save: **Ctrl+O** → **Enter** → **Ctrl+X**
 
-#### 3.3 Configure Environment-Specific Variables
-
-Ansible uses separate variable files for each environment to manage environment-specific configurations like ALB DNS and database endpoints.
-
-**Create QA-specific frontend variables:**
+#### 3.3 Commit Changes
 
 ```bash
-nano inventory/group_vars/frontend/qa.yml
-```
-
-Add:
-
-```yaml
----
-# QA Frontend Configuration
-backend_alb_dns: "qa-movie-analyst-alb-XXXXXX.us-east-1.elb.amazonaws.com" # ← Replace
-```
-
-**Create QA-specific backend variables:**
-
-```bash
-nano inventory/group_vars/backend/qa.yml
-```
-
-Add:
-
-```yaml
----
-# QA Backend Configuration
-db_endpoint: "qa-movie-analyst-db.XXXXXX.us-east-1.rds.amazonaws.com" # ← Replace
-```
-
-**For Production, create similar files:**
-
-```bash
-# Production frontend
-nano inventory/group_vars/frontend/prod.yml
-```
-
-```yaml
----
-# Production Frontend Configuration
-backend_alb_dns: "prod-movie-analyst-alb-XXXXXX.us-east-1.elb.amazonaws.com" # ← Replace
-```
-
-```bash
-# Production backend
-nano inventory/group_vars/backend/prod.yml
-```
-
-```yaml
----
-# Production Backend Configuration
-db_endpoint: "prod-movie-analyst-db.XXXXXX.us-east-1.rds.amazonaws.com" # ← Replace
-```
-
-Save all files: **Ctrl+O** → **Enter** → **Ctrl+X**
-
-#### 3.4 Commit and Push Changes
-
-```bash
-git add inventory/qa.ini inventory/group_vars/frontend/qa.yml inventory/group_vars/backend/qa.yml
-git commit -m "Configure QA inventory and environment variables"
+git add inventory/qa.ini
+git commit -m "Configure QA inventory with actual IPs"
 git push origin develop
 ```
-
-Enter GitHub credentials when prompted.
 
 ---
 
@@ -421,7 +372,9 @@ cd ~/fp-devops-cloud/ansible
 # Create vault password file (choose a strong password)
 echo "your-vault-password" > .vault_pass
 chmod 600 .vault_pass
-ls -la .vault_pass
+
+# CRITICAL: Create vault in inventory/group_vars/backend/
+mkdir -p inventory/group_vars/backend
 
 # Create encrypted vault file
 ansible-vault create inventory/group_vars/backend/vault.yml
@@ -438,10 +391,22 @@ vault_db_password: "YOUR_DATABASE_PASSWORD_FROM_SECRETS_MANAGER"
 
 Save: **Esc** → **:wq** → **Enter**
 
-#### 4.3 Commit Vault File
+**IMPORTANT:** The vault file MUST be in `inventory/group_vars/backend/vault.yml` because Ansible prioritizes this location over `group_vars/backend/vault.yml`.
+
+#### 4.3 Verify Vault Location
 
 ```bash
-git add group_vars/backend/vault.yml .vault_pass
+# Check that vault is in the correct location
+ls -la inventory/group_vars/backend/vault.yml
+
+# Verify you can decrypt it
+ansible-vault view inventory/group_vars/backend/vault.yml
+```
+
+#### 4.4 Commit Vault File
+
+```bash
+git add inventory/group_vars/backend/vault.yml .vault_pass
 git commit -m "Add encrypted database credentials"
 git push origin develop
 ```
@@ -455,10 +420,8 @@ git push origin develop
 #### 5.1 Test Ansible Connectivity
 
 ```bash
-# Test connection to all hosts (qa)
+# Test connection to all hosts
 ansible all -i inventory/qa.ini -m ping
-# Test connection to all hosts (prod)
-ansible all -i inventory/prod.ini -m ping
 ```
 
 **Expected output:**
@@ -476,25 +439,48 @@ frontend-2 | SUCCESS => { "ping": "pong" }
 - Check SSH key is loaded: `ssh-add -l`
 - Manually test SSH: `ssh ec2-user@10.0.11.XXX`
 
-#### 5.2 Deploy Frontend
-
-**Note:** The playbook will automatically load environment-specific variables from `inventory/group_vars/frontend/qa.yml` based on the `environment` variable set in the inventory file.
+#### 5.2 Deploy Backend
 
 ```bash
-# QA
-ansible-playbook playbooks/frontend.yml \
-  -i inventory/qa.ini \
-  --ask-vault-pass
-```
-
-```bash
-# PROD
-ansible-playbook playbooks/frontend.yml \
-  -i inventory/prod.ini \
-  --ask-vault-pass
+ansible-playbook -i inventory/qa.ini playbooks/backend.yml --ask-vault-pass
 ```
 
 - **Vault password prompt:** Enter vault password (from Step 4.2)
+- **Deployment time:** ~5-7 minutes
+- **Expected tasks:**
+  - Create user `backend` (NOT `ec2-user`)
+  - Install Node.js 16
+  - Install PM2 process manager
+  - Clone repository
+  - Install npm dependencies
+  - Configure environment variables (DB connection)
+  - Start API server with PM2 as user `backend`
+
+**Success indicators:**
+
+```
+PLAY RECAP *********************************************************************
+backend-1 : ok=20 changed=7 unreachable=0 failed=0
+backend-2 : ok=20 changed=7 unreachable=0 failed=0
+```
+
+**CRITICAL:** Verify PM2 is running as user `backend`:
+
+```bash
+ansible backend -i inventory/qa.ini -m shell \
+  -a "ps aux | grep node" \
+  --become
+```
+
+Should show: `backend XXXX ... node ...` (NOT `ec2-user`)
+
+#### 5.3 Deploy Frontend
+
+```bash
+ansible-playbook -i inventory/qa.ini playbooks/frontend.yml --ask-vault-pass
+```
+
+- **Vault password prompt:** Enter vault password
 - **Deployment time:** ~5-7 minutes
 - **Expected tasks:**
   - Install Node.js 16
@@ -511,36 +497,6 @@ ansible-playbook playbooks/frontend.yml \
 PLAY RECAP *********************************************************************
 frontend-1 : ok=25 changed=8 unreachable=0 failed=0
 frontend-2 : ok=25 changed=8 unreachable=0 failed=0
-```
-
-#### 5.3 Deploy Backend
-
-```bash
-# QA
-ansible-playbook -i inventory/qa.ini playbooks/backend.yml --ask-vault-pass
-```
-
-```bash
-# PROD
-ansible-playbook -i inventory/prod.ini playbooks/backend.yml --ask-vault-pass
-```
-
-- **Vault password prompt:** Enter vault password
-- **Deployment time:** ~5-7 minutes
-- **Expected tasks:**
-  - Install Node.js 16
-  - Install PM2 process manager
-  - Clone repository
-  - Install npm dependencies
-  - Configure environment variables (DB connection)
-  - Start API server with PM2
-
-**Success indicators:**
-
-```
-PLAY RECAP *********************************************************************
-backend-1 : ok=20 changed=7 unreachable=0 failed=0
-backend-2 : ok=20 changed=7 unreachable=0 failed=0
 ```
 
 ---
@@ -638,11 +594,7 @@ node seeds.js
 **Expected output:**
 
 ```
-✓ Database connection successful
-✓ Publications seeded (3 rows)
-✓ Reviewers seeded (7 rows)
-✓ Movies seeded (12 rows)
-✓ Seed completed successfully
+Seeds successfully executed
 ```
 
 **If seed fails:**
@@ -665,17 +617,24 @@ sudo -u backend pm2 list
 
 ```
 ┌─────┬────────────────────┬─────────┬─────────┬──────────┐
-│ id  │ name               │ mode    │ status  │ restart  │
+│ id  │ name               │ mode    │ status  │ user     │
 ├─────┼────────────────────┼─────────┼─────────┼──────────┤
-│ 0   │ movie-analyst-api  │ fork    │ online  │ 0        │
+│ 0   │ movie-analyst-api  │ fork    │ online  │ backend  │
 └─────┴────────────────────┴─────────┴─────────┴──────────┘
 ```
 
-**If status is "stopped":**
+**CRITICAL:** User column MUST show `backend`, NOT `ec2-user`.
+
+**If status is "stopped" or "errored":**
 
 ```bash
-sudo -u backend pm2 restart movie-analyst-api
-sudo -u backend pm2 logs   # Check for errors
+# Check logs for errors
+sudo -u backend pm2 logs movie-analyst-api --err --lines 30
+
+# Common fix: Delete and restart (NOT just restart)
+sudo -u backend pm2 delete movie-analyst-api
+sudo -u backend pm2 start /opt/movie-analyst-api/ecosystem.config.js
+sudo -u backend pm2 save
 ```
 
 #### 8.2 Test API Endpoints
@@ -683,7 +642,7 @@ sudo -u backend pm2 logs   # Check for errors
 ```bash
 # Health check
 curl http://localhost:3000
-# Expected: {"status":"ok"}
+# Expected: {"service_status":"Up"}
 
 # List movies
 curl http://localhost:3000/movies
@@ -694,24 +653,29 @@ curl http://localhost:3000/movies
 
 ```bash
 # Check PM2 logs
-sudo -u backend pm2 logs movie-analyst-api
+sudo -u backend pm2 logs movie-analyst-api --err --lines 30
 
-# Check application logs
-sudo cat /home/backend/.pm2/logs/movie-analyst-api-error.log
+# Verify environment variables
+sudo -u backend pm2 env 0 | grep DB_
+
+# Check ecosystem.config.js
+cat /opt/movie-analyst-api/ecosystem.config.js | grep DB_
 ```
 
 ---
 
-### Step 9: Update Reviewer Avatars (Optional)
+### Step 9: Update Reviewer Avatars with S3
 
 #### 9.1 Generate New Avatars
+
+_From your LOCAL machine (NOT from Bastion):_
 
 ```bash
 # Create temporary directory
 mkdir -p /tmp/avatars
 cd /tmp/avatars
 
-# Generate 7 unique avatars
+# Generate 7 unique avatars (smaller size: 64px)
 for i in {1..7}; do
   curl "https://api.dicebear.com/7.x/avataaars/svg?seed=reviewer$i&size=64" > reviewer$i.svg
 done
@@ -722,27 +686,30 @@ ls -lh
 
 #### 9.2 Upload to S3 Bucket
 
-_Note: This step assumes S3 bucket exists. If not created yet, skip this section._
-
 ```bash
+# Get bucket name from Terraform
+cd ~/path/to/terraform
+terraform output assets_bucket_name
+
 # Upload avatars
-aws s3 cp . s3://qa-movie-analyst-assets/avatars/ --recursive
+aws s3 cp /tmp/avatars/ s3://qa-movie-analyst-assets/avatars/ --recursive
 
 # Verify upload
 aws s3 ls s3://qa-movie-analyst-assets/avatars/
 ```
 
-#### 9.3 Update images in database
+#### 9.3 Update Database with S3 URLs
 
 ```bash
-# Connect to DB
+# Connect to database (from Backend instance or local)
 mysql -h qa-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com \
-  -u admin -p'DB_PASSWORD'
+  -u admin -p'YOUR_DB_PASSWORD'
+```
 
-# Update URLs
+```sql
 USE movieanalyst;
 
--- See current URLs
+-- View current URLs
 SELECT id, name, avatar FROM reviewers;
 
 -- Update with S3 URLs
@@ -760,28 +727,40 @@ SELECT id, name, avatar FROM reviewers;
 EXIT;
 ```
 
+#### 9.4 Test Avatar Display
+
+Refresh the application in browser and verify avatars display correctly.
+
 ---
 
 ### Step 10: Frontend Validation
 
-#### 10.1 Access Application
+#### 10.1 Access Application via ALB
 
 **From your local machine browser:**
 
 ```
-http://[FRONTEND_PUBLIC_IP]
+http://qa-movie-analyst-alb-XXXXXX.us-east-1.elb.amazonaws.com
 ```
 
 **Expected:** Movie Analyst UI loads with movie list.
 
 #### 10.2 Test Application Features
 
-- **Homepage:** Should display options
-- **Latest Reviews:** Cards with all Latest Movie Reviews
-- **Authors:** Should show reviewer name, avatar and place of work
-- **Publication Partners:** Partner's names
+- **Homepage:** Should display movie list
+- **Latest Reviews:** Cards with movie reviews
+- **Reviewer Avatars:** Should display avatars from S3
+- **Authors:** Should show reviewer names and publications
+- **Publication Partners:** Partner names with icons
 
 **If frontend doesn't load:**
+
+- **Check ALB target health:**
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn $(terraform output -raw frontend_target_group_arn)
+```
 
 - **Check Nginx status (from Frontend instance):**
 
@@ -791,7 +770,7 @@ sudo systemctl status nginx
 curl localhost
 ```
 
-- **Check browser console:** F12 → Console tab — look for CORS errors, API errors, network failures
+- **Check browser console:** F12 → Console tab — look for CORS errors, API errors
 
 ---
 
@@ -809,7 +788,6 @@ _Note: Production deployment follows the same steps as QA with workspace-specifi
 | Deletion Protection | Disabled      | Enabled          |
 | Monitoring Interval | Basic (5 min) | Enhanced (1 min) |
 | Estimated Cost      | ~$30/month    | ~$50/month       |
-|                     |
 
 ### Production Deployment Steps
 
@@ -825,21 +803,19 @@ terraform plan
 # 3. Deploy infrastructure
 terraform apply
 
-# 4. Follow Steps 2-10 from QA deployment
+# 4. Configure inventory: inventory/prod.ini
+# Update with production IPs and endpoints
+
+# 5. Create production vault: inventory/group_vars/backend/vault.yml
+# Use production database password
+
+# 6. Deploy with Ansible
+cd ~/fp-devops-cloud/ansible
+ansible-playbook -i inventory/prod.ini playbooks/backend.yml --ask-vault-pass
+ansible-playbook -i inventory/prod.ini playbooks/frontend.yml --ask-vault-pass
+
+# 7. Follow Steps 6-10 from QA deployment
 #    Replace "qa" with "prod" in all configurations
-
-# 5. Configure production-specific variables
-# Create inventory/group_vars/frontend/prod.yml
-# Create inventory/group_vars/backend/prod.yml
-# (See Step 3.3 for structure)
-
-# 6. Update inventory file: inventory/prod.ini
-
-# 7. Create production vault: group_vars/backend/vault.yml
-
-# 8. Deploy with Ansible
-ansible-playbook playbooks/frontend.yml -i inventory/prod.ini --ask-vault-pass
-ansible-playbook playbooks/backend.yml -i inventory/prod.ini --ask-vault-pass
 ```
 
 ---
@@ -850,23 +826,25 @@ ansible-playbook playbooks/backend.yml -i inventory/prod.ini --ask-vault-pass
 
 **Infrastructure:**
 
-- All EC2 instances running (`terraform output`)
-- RDS database available
-- ALB health checks passing
-- NAT Gateway operational
+- [ ] All EC2 instances running (`terraform output`)
+- [ ] RDS database available
+- [ ] ALB health checks passing
+- [ ] NAT Gateway operational
+- [ ] S3 bucket created and accessible
 
 **Application:**
 
-- Frontend accessible via ALB DNS
-- Backend API responding (`curl http://localhost:3000`)
-- Database connection successful
-- PM2 processes running
+- [ ] Frontend accessible via ALB DNS
+- [ ] Backend API responding (`curl http://localhost:3000`)
+- [ ] Database connection successful
+- [ ] PM2 processes running as user `backend`
+- [ ] Avatars loading from S3
 
 **Monitoring:**
 
-- CloudWatch dashboard showing metrics
-- CloudWatch alarms in "OK" state
-- No failed deployments in Ansible
+- [ ] CloudWatch dashboard showing metrics
+- [ ] CloudWatch alarms in "OK" state
+- [ ] No failed deployments in Ansible
 
 ### Automated Validation Script
 
@@ -878,6 +856,7 @@ echo "=== Infrastructure Validation ==="
 terraform output bastion_public_ip
 terraform output alb_dns_name
 terraform output db_endpoint
+terraform output assets_bucket_name
 
 echo "=== ALB Health Check ==="
 aws elbv2 describe-target-health \
@@ -909,7 +888,7 @@ curl -s "http://$ALB_DNS" | grep -q "Movie Analyst" && echo "✓ Frontend OK" ||
 **Solutions:**
 
 - Check AWS credentials: `aws sts get-caller-identity`
-- Verify IAM permissions (need EC2, RDS, VPC full access)
+- Verify IAM permissions (need EC2, RDS, VPC, S3 full access)
 - Check region: Must be us-east-1
 - Review terraform.tfstate for conflicts
 
@@ -943,7 +922,7 @@ aws ec2 describe-security-groups \
 
 #### Issue 4: Database Connection Fails
 
-**Symptom:** Can't connect to MySQL server
+**Symptom:** Can't connect to MySQL server or `ER_ACCESS_DENIED_ERROR`
 
 **Solutions:**
 
@@ -955,7 +934,7 @@ aws ec2 describe-security-groups \
 ```
 
 - Check RDS status: `aws rds describe-db-instances`
-- Verify password: Retrieve from Secrets Manager
+- Verify password in vault matches Secrets Manager
 - Test from Backend instance: `mysql -h [endpoint] -u admin -p`
 
 #### Issue 5: Frontend Not Loading
@@ -982,6 +961,196 @@ curl localhost
 - Check browser console (F12) for errors
 - Verify ALB security group allows HTTP from 0.0.0.0/0
 
+#### Issue 6: Backend API Not Responding After Configuration Change
+
+**Symptom:** `curl http://localhost:3000/movies` hangs or times out after editing `ecosystem.config.js`
+
+**Root Cause:** PM2 does NOT reload the `ecosystem.config.js` file when using `pm2 restart`. It only reloads when using `pm2 delete` + `pm2 start`.
+
+**CRITICAL SOLUTION:**
+
+```bash
+# WRONG: This does NOT reload ecosystem.config.js
+sudo -u backend pm2 restart movie-analyst-api  # ❌ DON'T DO THIS
+
+# CORRECT: Delete and re-start to reload ecosystem.config.js
+sudo -u backend pm2 delete movie-analyst-api   # ✅ Step 1: Delete
+sudo -u backend pm2 list                       # ✅ Step 2: Verify empty
+sudo -u backend pm2 start /opt/movie-analyst-api/ecosystem.config.js  # ✅ Step 3: Start fresh
+sudo -u backend pm2 save                       # ✅ Step 4: Save config
+
+# Verify environment variables loaded correctly
+sudo -u backend pm2 env 0 | grep DB_HOST
+# Should show the correct database endpoint
+
+# Test API
+curl http://localhost:3000/movies
+```
+
+**IMPORTANT:** If you manually edited `ecosystem.config.js` to fix database credentials or endpoints, you MUST use this delete + start sequence. Using `pm2 restart` will keep using old cached environment variables.
+
+**Repeat for all backend instances:**
+
+```bash
+# Backend-2
+ssh ec2-user@[backend-2-ip]
+sudo -u backend pm2 delete movie-analyst-api
+sudo -u backend pm2 start /opt/movie-analyst-api/ecosystem.config.js
+sudo -u backend pm2 save
+curl http://localhost:3000/movies
+```
+
+#### Issue 7: Ansible Vault Has Multiple Files with Different Passwords
+
+**Symptom:** Backend instances have wrong database endpoint (e.g., QA endpoint in production)
+
+**Root Cause:** Ansible prioritizes variables in this order:
+
+1. `inventory/group_vars/backend/vault.yml` (HIGHEST priority)
+2. `group_vars/backend/vault.yml` (lower priority)
+
+If you have both files with different values, the one in `inventory/` wins.
+
+**Solution:**
+
+```bash
+# Find all vault files
+cd ~/fp-devops-cloud/ansible
+find . -name "vault.yml" -o -name "*vault*"
+
+# Check which vault is being used
+ansible-vault view inventory/group_vars/backend/vault.yml
+ansible-vault view group_vars/backend/vault.yml  # If exists
+
+# Update the CORRECT vault (the one in inventory/)
+ansible-vault edit inventory/group_vars/backend/vault.yml
+
+# Verify the password is correct
+ansible-vault view inventory/group_vars/backend/vault.yml | grep vault_db_password
+
+# Delete duplicate vaults to avoid confusion
+rm group_vars/backend/vault.yml  # If exists
+
+# Force regeneration of ecosystem.config.js
+ansible backend -i inventory/qa.ini -m file \
+  -a "path=/opt/movie-analyst-api/ecosystem.config.js state=absent" \
+  --become
+
+# Re-run Ansible to apply correct password
+ansible-playbook -i inventory/qa.ini playbooks/backend.yml --ask-vault-pass
+
+# Verify password in ecosystem.config.js
+ansible backend -i inventory/qa.ini -m shell \
+  -a "grep 'DB_PASS' /opt/movie-analyst-api/ecosystem.config.js" \
+  --become
+
+# CRITICAL: Delete and restart PM2 (not just restart)
+ansible backend -i inventory/qa.ini -m shell \
+  -a "sudo -u backend pm2 delete movie-analyst-api && sudo -u backend pm2 start /opt/movie-analyst-api/ecosystem.config.js && sudo -u backend pm2 save" \
+  --become
+```
+
+#### Issue 8: PM2 Running as Wrong User (ec2-user instead of backend)
+
+**Symptom:** Application works but runs as `ec2-user` instead of `backend`
+
+**Root Cause:** Ansible role created user with `system: yes` which creates a restricted system user without proper home directory.
+
+**Solution:**
+
+```bash
+# Check current user running PM2
+ps aux | grep node
+# Should show: backend XXXX ... node ...
+# NOT: ec2-user XXXX ... node ...
+
+# If running as ec2-user, fix it:
+
+# 1. Stop all PM2 processes
+sudo -u ec2-user pm2 delete all
+sudo -u ec2-user pm2 kill
+
+# 2. Recreate backend user correctly
+sudo userdel -r backend 2>/dev/null || true
+sudo useradd -m -s /bin/bash backend  # Note: NOT -system
+sudo chmod 755 /home/backend
+sudo usermod -aG wheel backend
+
+# 3. Verify user was created correctly
+groups backend  # Should show: backend wheel
+ls -la /home/ | grep backend  # Should show: drwxr-xr-x
+
+# 4. Re-run Ansible to deploy as correct user
+ansible-playbook -i inventory/qa.ini playbooks/backend.yml --ask-vault-pass
+
+# 5. Verify PM2 is running as backend
+sudo -u backend pm2 list
+ps aux | grep node  # Should show "backend" as user
+```
+
+**IMPORTANT:** Update your Ansible role to prevent this:
+
+**File:** `ansible/roles/backend/tasks/application.yml`
+
+```yaml
+- name: Create backend user
+  user:
+    name: "{{ app_user }}"
+    comment: "Backend application user"
+    shell: /bin/bash
+    create_home: yes
+    system: no # ← CRITICAL: Must be "no", not "yes"
+  become: yes
+```
+
+#### Issue 9: S3 Bucket Access Denied When Uploading Avatars
+
+**Symptom:** `AccessDenied` error when running `aws s3 cp` from Bastion
+
+**Root Cause:** Bastion IAM role doesn't have S3 permissions by default.
+
+**Solution:**
+
+Upload from your LOCAL machine instead of Bastion:
+
+```bash
+# From your local machine (NOT from Bastion)
+cd /tmp/avatars
+aws s3 cp . s3://qa-movie-analyst-assets/avatars/ --recursive
+
+# Verify upload
+aws s3 ls s3://qa-movie-analyst-assets/avatars/
+```
+
+**Alternative:** Add S3 permissions to Bastion role in Terraform (optional):
+
+**File:** `terraform/modules/security/main.tf`
+
+```hcl
+resource "aws_iam_role_policy" "bastion_s3" {
+  name = "s3-assets-access"
+  role = aws_iam_role.bastion.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.environment}-movie-analyst-assets",
+          "arn:aws:s3:::${var.environment}-movie-analyst-assets/*"
+        ]
+      }
+    ]
+  })
+}
+```
+
 ---
 
 ## Destroy Infrastructure
@@ -990,12 +1159,15 @@ curl localhost
 
 ```bash
 # 1. Stop application processes (from Bastion)
-ansible all -m shell -a "sudo -u ec2-user pm2 stop all"
+ansible all -i inventory/qa.ini -m shell -a "sudo -u backend pm2 stop all" --become
 
 # 2. Backup database (if needed)
-# [Manually export from RDS Console]
+# [Manually export from RDS Console or use mysqldump]
 
-# 3. Destroy Terraform resources
+# 3. Empty S3 bucket (REQUIRED before destroy)
+aws s3 rm s3://qa-movie-analyst-assets --recursive
+
+# 4. Destroy Terraform resources
 cd terraform
 terraform workspace select qa
 terraform destroy
@@ -1019,6 +1191,7 @@ terraform destroy -auto-approve
 # Verify no resources remain
 aws ec2 describe-instances --filters "Name=tag:Project,Values=movie-analyst"
 aws rds describe-db-instances --query 'DBInstances[?contains(DBInstanceIdentifier, `movie-analyst`)]'
+aws s3 ls | grep movie-analyst
 
 # Clean local state (optional)
 rm -rf .terraform
@@ -1054,8 +1227,12 @@ aws ec2 stop-instances --instance-ids \
 - **Destroy when not in use:**
 
 ```bash
+# Empty S3 bucket first
+aws s3 rm s3://qa-movie-analyst-assets --recursive
+
+# Destroy infrastructure
 terraform destroy
-# DELETE S3 assets objects before destroy
+
 # Rebuild when needed: terraform apply
 ```
 
@@ -1069,9 +1246,9 @@ terraform destroy
 
 - **Project Repository:** https://github.com/stefanyralvgh/fp-devops-cloud
 - **Documentation:**
-  - Technical Decisions
-  - Daily Development Logs
-  - Architecture Diagram
+  - `docs/technical-decisions.md` - Architecture decisions and rationale
+  - `docs/DAILY_LOGS.md` - Daily development logs
+  - `docs/architecture.png` - Visual architecture diagram
 
 **Key Files:**
 
@@ -1089,38 +1266,87 @@ terraform destroy
 
 ```bash
 terraform workspace list          # List workspaces
-terraform workspace select qa    # Switch workspace
-terraform output                 # Show all outputs
-terraform state list             # List all resources
-terraform plan -out=plan.tfplan  # Save plan
+terraform workspace select qa     # Switch workspace
+terraform output                  # Show all outputs
+terraform state list              # List all resources
+terraform plan -out=plan.tfplan   # Save plan
 terraform apply plan.tfplan       # Apply saved plan
+terraform taint aws_instance.backend  # Mark for recreation
 ```
 
 **Ansible:**
 
 ```bash
-ansible all -m ping                    # Test connectivity
-ansible-playbook --syntax-check FILE   # Validate syntax
-ansible-playbook --check FILE          # Dry run
-ansible-playbook --list-tasks FILE     # Show tasks
-ansible-vault edit FILE                # Edit encrypted file
+ansible all -m ping -i inventory/qa.ini          # Test connectivity
+ansible-playbook --syntax-check FILE             # Validate syntax
+ansible-playbook --check FILE                    # Dry run
+ansible-playbook --list-tasks FILE               # Show tasks
+ansible-vault edit FILE                          # Edit encrypted file
+ansible-vault view FILE                          # View encrypted file
+ansible backend -m shell -a "COMMAND" --become   # Run command on backends
+```
+
+**PM2:**
+
+```bash
+sudo -u backend pm2 list              # List all processes
+sudo -u backend pm2 logs              # View logs (all processes)
+sudo -u backend pm2 logs APP_NAME     # View specific app logs
+sudo -u backend pm2 logs --err        # View only errors
+sudo -u backend pm2 env 0             # View environment variables
+sudo -u backend pm2 delete APP_NAME   # Delete app from PM2
+sudo -u backend pm2 start FILE        # Start app from config file
+sudo -u backend pm2 save              # Save PM2 process list
+sudo -u backend pm2 startup           # Configure auto-start on boot
 ```
 
 **AWS CLI:**
 
 ```bash
-aws ec2 describe-instances        # List EC2 instances
-aws rds describe-db-instances     # List RDS instances
-aws elbv2 describe-load-balancers # List ALBs
-aws secretsmanager list-secrets   # List secrets
+aws ec2 describe-instances            # List EC2 instances
+aws rds describe-db-instances         # List RDS instances
+aws elbv2 describe-load-balancers     # List ALBs
+aws secretsmanager list-secrets       # List secrets
+aws s3 ls                             # List S3 buckets
+aws s3 ls s3://BUCKET_NAME/           # List bucket contents
 ```
 
 ### Quick Reference Table
 
-| Component | Access Method            | Default Credentials                    |
-| --------- | ------------------------ | -------------------------------------- |
-| Bastion   | SSH via public IP        | Key: movie-analyst-bastion-key         |
-| Frontend  | Browser via ALB DNS      | N/A (public)                           |
-| Backend   | SSH via Bastion jump     | Key: movie-analyst-bastion-key         |
-| RDS       | MySQL client via Backend | User: admin, Password: Secrets Manager |
-| ALB       | Browser (HTTP only)      | N/A (public)                           |
+| Component | Access Method            | Default Credentials                    | User Context |
+| --------- | ------------------------ | -------------------------------------- | ------------ |
+| Bastion   | SSH via public IP        | Key: movie-analyst-bastion-key         | ec2-user     |
+| Frontend  | Browser via ALB DNS      | N/A (public)                           | frontend     |
+| Backend   | SSH via Bastion jump     | Key: movie-analyst-bastion-key         | backend      |
+| RDS       | MySQL client via Backend | User: admin, Password: Secrets Manager | N/A          |
+| ALB       | Browser (HTTP only)      | N/A (public)                           | N/A          |
+| S3        | AWS CLI or Console       | IAM credentials                        | N/A          |
+
+### PM2 vs System User Context
+
+**CRITICAL:** Always use the correct user when managing PM2:
+
+```bash
+# ✅ CORRECT
+sudo -u backend pm2 list
+sudo -u backend pm2 logs movie-analyst-api
+sudo -u backend pm2 restart movie-analyst-api
+
+# ❌ WRONG (will use ec2-user's PM2, not backend's)
+pm2 list
+pm2 logs movie-analyst-api
+sudo pm2 restart movie-analyst-api
+```
+
+**Why this matters:**
+
+- Each system user has their own PM2 daemon
+- `backend` user has proper permissions for application files
+- Using wrong user context leads to permission errors and confusion
+- `ec2-user` is for admin tasks, `backend` is for running the application
+
+---
+
+**Document Version:** 2.0  
+**Last Updated:** February 2, 2026  
+**Validated On:** QA and Production environments
