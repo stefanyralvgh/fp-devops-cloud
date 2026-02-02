@@ -15,6 +15,7 @@ pm2_app_name: "movie-analyst-api"
 pm2_instances: 1
 pm2_exec_mode: "fork"
 pm2_max_memory_restart: "500M"
+pm2_user_home: "/home/ec2-user"
 
 # Database configuration (from inventory + vault)
 db_host: "{{ db_endpoint }}"

@@ -15,8 +15,8 @@ module.exports = {
       DB_USER: '{{ db_user }}',
       DB_PASS: '{{ db_password }}'
     },
-    error_file: '/home/{{ app_user }}/.pm2/logs/{{ pm2_app_name }}-error.log',
-    out_file: '/home/{{ app_user }}/.pm2/logs/{{ pm2_app_name }}-out.log',
+    error_file: '{{ pm2_user_home }}/.pm2/logs/movie-analyst-api-error.log',
+    out_file: '{{ pm2_user_home }}/.pm2/logs/movie-analyst-api-out.log',
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
     merge_logs: true,
     autorestart: true,
