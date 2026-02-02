@@ -1,3 +1,3 @@
 ---
 # Backend connection (via ALB)
-backend_alb_dns: "prod-movie-analyst-alb-XXXXXXXXXX.us-east-1.elb.amazonaws.com"
+backend_alb_dns: "prod-movie-analyst-alb-2105407995.us-east-1.elb.amazonaws.com"
