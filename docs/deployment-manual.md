@@ -267,7 +267,7 @@ Environment: qa
 # From Bastion terminal
 git clone https://github.com/stefanyralvgh/fp-devops-cloud.git
 cd fp-devops-cloud
-git checkout develop
+git checkout develop (skip these for prod)
 cd ansible
 ```
 
@@ -388,7 +388,7 @@ echo "your-vault-password" > .vault_pass
 chmod 600 .vault_pass
 
 # Create encrypted vault file
-ansible-vault create group_vars/backend/vault.yml
+ansible-vault create inventory/group_vars/backend/vault.yml
 ```
 
 **Vault password prompt:** Enter the password you chose above.
@@ -419,8 +419,10 @@ git push origin develop
 #### 5.1 Test Ansible Connectivity
 
 ```bash
-# Test connection to all hosts
+# Test connection to all hosts (qa)
 ansible all -m ping
+# Test connection to all hosts (prod)
+ansible all -i inventory/prod.ini -m ping
 ```
 
 **Expected output:**
@@ -441,7 +443,15 @@ frontend-2 | SUCCESS => { "ping": "pong" }
 #### 5.2 Deploy Frontend
 
 ```bash
+# QA
 ansible-playbook playbooks/frontend.yml --ask-vault-pass
+```
+
+```bash
+# PROD
+ansible-playbook playbooks/frontend.yml \
+  -i inventory/prod.ini \
+  --ask-vault-pass
 ```
 
 - **Vault password prompt:** Enter vault password (from Step 4.2)
@@ -466,7 +476,15 @@ frontend-2 : ok=25 changed=8 unreachable=0 failed=0
 #### 5.3 Deploy Backend
 
 ```bash
+# QA
 ansible-playbook playbooks/backend.yml --ask-vault-pass
+```
+
+```bash
+# PROD
+ansible-playbook playbooks/backend.yml \
+  -i inventory/prod.ini \
+  --ask-vault-pass
 ```
 
 - **Vault password prompt:** Enter vault password
@@ -602,7 +620,7 @@ node seeds.js
 #### 8.1 Check PM2 Process Status
 
 ```bash
-sudo -u ec2-user pm2 list
+sudo -u backend pm2 list
 ```
 
 **Expected output:**
@@ -618,8 +636,8 @@ sudo -u ec2-user pm2 list
 **If status is "stopped":**
 
 ```bash
-sudo -u ec2-user pm2 restart movie-analyst-api
-sudo -u ec2-user pm2 logs   # Check for errors
+sudo -u backend pm2 restart movie-analyst-api
+sudo -u backend pm2 logs   # Check for errors
 ```
 
 #### 8.2 Test API Endpoints
@@ -638,10 +656,10 @@ curl http://localhost:3000/movies
 
 ```bash
 # Check PM2 logs
-sudo -u ec2-user pm2 logs movie-analyst-api
+sudo -u backend pm2 logs movie-analyst-api
 
 # Check application logs
-sudo cat /home/ec2-user/.pm2/logs/movie-analyst-api-error.log
+sudo cat /home/backend/.pm2/logs/movie-analyst-api-error.log
 ```
 
 ---
@@ -676,6 +694,34 @@ aws s3 cp . s3://qa-movie-analyst-assets/avatars/ --recursive
 aws s3 ls s3://qa-movie-analyst-assets/avatars/
 ```
 
+#### 9.3 Update images in database
+
+```bash
+# Connect to DB
+mysql -h qa-movie-analyst-db.c4dgqs6w0zk3.us-east-1.rds.amazonaws.com \
+  -u admin -p'DB_PASSWORD'
+
+# Update URLs
+USE movieanalyst;
+
+-- See current URLs
+SELECT id, name, avatar FROM reviewers;
+
+-- Update with S3 URLs
+UPDATE reviewers SET avatar = 'https://qa-movie-analyst-assets.s3.amazonaws.com/avatars/reviewer1.svg' WHERE id = 1;
+UPDATE reviewers SET avatar = 'https://qa-movie-analyst-assets.s3.amazonaws.com/avatars/reviewer2.svg' WHERE id = 2;
+UPDATE reviewers SET avatar = 'https://qa-movie-analyst-assets.s3.amazonaws.com/avatars/reviewer3.svg' WHERE id = 3;
+UPDATE reviewers SET avatar = 'https://qa-movie-analyst-assets.s3.amazonaws.com/avatars/reviewer4.svg' WHERE id = 4;
+UPDATE reviewers SET avatar = 'https://qa-movie-analyst-assets.s3.amazonaws.com/avatars/reviewer5.svg' WHERE id = 5;
+UPDATE reviewers SET avatar = 'https://qa-movie-analyst-assets.s3.amazonaws.com/avatars/reviewer6.svg' WHERE id = 6;
+UPDATE reviewers SET avatar = 'https://qa-movie-analyst-assets.s3.amazonaws.com/avatars/reviewer7.svg' WHERE id = 7;
+
+-- Verify update
+SELECT id, name, avatar FROM reviewers;
+
+EXIT;
+```
+
 ---
 
 ### Step 10: Frontend Validation
@@ -685,35 +731,19 @@ aws s3 ls s3://qa-movie-analyst-assets/avatars/
 **From your local machine browser:**
 
 ```
-http://[ALB_DNS_NAME]
-```
-
-Get ALB DNS:
-
-```bash
-terraform output alb_dns_name
-# Example: qa-movie-analyst-alb-123456789.us-east-1.elb.amazonaws.com
+http://[FRONTEND_PUBLIC_IP]
 ```
 
 **Expected:** Movie Analyst UI loads with movie list.
 
 #### 10.2 Test Application Features
 
-- **Homepage:** Should display list of movies
-- **Movie details:** Click on a movie to view details
-- **Reviewer info:** Should show reviewer name and publication
-- **Images:** Reviewer avatars should load
+- **Homepage:** Should display options
+- **Latest Reviews:** Cards with all Latest Movie Reviews
+- **Authors:** Should show reviewer name, avatar and place of work
+- **Publication Partners:** Partner's names
 
 **If frontend doesn't load:**
-
-- **Check ALB health:**
-
-```bash
-aws elbv2 describe-target-health \
-  --target-group-arn $(terraform output -raw backend_target_group_arn)
-```
-
-Expected: Targets should be "healthy"
 
 - **Check Nginx status (from Frontend instance):**
 
@@ -979,6 +1009,7 @@ aws ec2 stop-instances --instance-ids \
 
 ```bash
 terraform destroy
+# DELETE S3 assets objects before destroy
 # Rebuild when needed: terraform apply
 ```
 
