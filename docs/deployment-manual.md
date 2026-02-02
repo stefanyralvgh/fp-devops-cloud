@@ -267,7 +267,7 @@ Environment: qa
 # From Bastion terminal
 git clone https://github.com/stefanyralvgh/fp-devops-cloud.git
 cd fp-devops-cloud
-git checkout develop (skip these for prod)
+git checkout develop # (skip these for prod)
 cd ansible
 ```
 
@@ -455,7 +455,7 @@ git push origin develop
 
 ```bash
 # Test connection to all hosts (qa)
-ansible all -m ping
+ansible all -i inventory/qa.ini -m ping
 # Test connection to all hosts (prod)
 ansible all -i inventory/prod.ini -m ping
 ```
@@ -813,7 +813,7 @@ _Note: Production deployment follows the same steps as QA with workspace-specifi
 | Deletion Protection | Disabled      | Enabled          |
 | Monitoring Interval | Basic (5 min) | Enhanced (1 min) |
 | Estimated Cost      | ~$30/month    | ~$50/month       |
-|  |
+|                     |
 
 ### Production Deployment Steps
 
