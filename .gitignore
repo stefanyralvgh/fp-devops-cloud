@@ -1,0 +1,47 @@
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+tfplan*
+terraform.tfvars
+crash.log
+outputs.txt
+outputs-qa.txt
+outputs-prod.txt*
+
+# Ansible
+*.retry
+ansible/*.log
+
+# AWS
+*.pem
+*.ppk
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*secret*
+*credentials*
+.vault_pass*
+
+# Keys
+*.pem
+*.pub   
+keys/
+
+# Scripts
+# Scripts logs
+scripts/*.log
+scripts/.env
+
+
+

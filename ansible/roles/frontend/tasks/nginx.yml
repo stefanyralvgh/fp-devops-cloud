@@ -1,0 +1,129 @@
+---
+# ansible/roles/frontend/tasks/nginx.yml
+
+- name: Check if Nginx is installed
+  command: nginx -v
+  register: nginx_check
+  failed_when: false
+  changed_when: false
+
+- name: Enable nginx repository (Amazon Linux)
+  command: amazon-linux-extras install nginx1 -y
+  when: nginx_check.rc != 0
+  become: true
+
+- name: Install nginx
+  yum:
+    name: nginx
+    state: present
+  become: true
+
+- name: Ensure Nginx conf.d directory exists
+  file:
+    path: /etc/nginx/conf.d
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Backup original nginx.conf
+  copy:
+    src: /etc/nginx/nginx.conf
+    dest: /etc/nginx/nginx.conf.backup
+    remote_src: yes
+    force: no
+  become: true
+
+- name: Replace nginx.conf with minimal config
+  copy:
+    dest: /etc/nginx/nginx.conf
+    content: |
+      user nginx;
+      worker_processes auto;
+      error_log /var/log/nginx/error.log;
+      pid /run/nginx.pid;
+
+      include /usr/share/nginx/modules/*.conf;
+
+      events {
+          worker_connections 1024;
+      }
+
+      http {
+          log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                            '$status $body_bytes_sent "$http_referer" '
+                            '"$http_user_agent" "$http_x_forwarded_for"';
+
+          access_log  /var/log/nginx/access.log  main;
+
+          sendfile            on;
+          tcp_nopush          on;
+          tcp_nodelay         on;
+          keepalive_timeout   65;
+          types_hash_max_size 4096;
+
+          include             /etc/nginx/mime.types;
+          default_type        application/octet-stream;
+
+          # Load modular configuration files from the /etc/nginx/conf.d directory.
+          include /etc/nginx/conf.d/*.conf;
+      }
+    mode: '0644'
+  become: true
+  notify: restart nginx
+
+- name: Create Nginx configuration for movie-analyst
+  copy:
+    dest: /etc/nginx/conf.d/movie-analyst.conf
+    content: |
+      server {
+          listen 80;
+          server_name _;
+
+          # Frontend - Proxy to React app running on PM2
+          location / {
+              proxy_pass http://localhost:{{ frontend_port }};
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
+              proxy_set_header Connection 'upgrade';
+              proxy_set_header Host $host;
+              proxy_cache_bypass $http_upgrade;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+
+          # Backend API - Proxy to ALB
+          location /api/ {
+              proxy_pass http://{{ backend_alb_dns }}/;
+              proxy_http_version 1.1;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              
+              # Remove /api prefix when forwarding
+              rewrite ^/api/(.*) /$1 break;
+          }
+
+          # Health check endpoint
+          location /health {
+              access_log off;
+              return 200 "healthy\n";
+              add_header Content-Type text/plain;
+          }
+      }
+    mode: '0644'
+  become: true
+  notify: restart nginx
+
+- name: Test Nginx configuration
+  command: nginx -t
+  become: true
+  changed_when: false
+
+- name: Ensure Nginx is started and enabled
+  systemd:
+    name: nginx
+    state: started
+    enabled: true
+  become: true

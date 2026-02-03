@@ -1,0 +1,31 @@
+---
+# Repository configuration
+frontend_repo_url: "https://github.com/aljoveza/devops-rampup.git"
+frontend_repo_branch: "master"
+frontend_subdirectory: "movie-analyst-ui"
+
+# Application paths
+frontend_app_dir: "/opt/movie-analyst-ui"
+frontend_repo_dir: "/opt/devops-rampup"
+
+# Application user
+frontend_user: "frontend"
+frontend_group: "frontend"
+
+# Application configuration
+frontend_port: 3030
+
+# Backend connection (via ALB)
+backend_alb_dns: "qa-movie-analyst-alb-2105407995.us-east-1.elb.amazonaws.com"
+
+# Node.js version
+nodejs_version: "16"
+
+# PM2 configuration
+pm2_app_name: "movie-analyst-ui"
+pm2_instances: 2
+pm2_exec_mode: "cluster"
+
+# Nginx configuration
+nginx_worker_processes: "auto"
+nginx_worker_connections: 1024

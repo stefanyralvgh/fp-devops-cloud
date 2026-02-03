@@ -1,0 +1,56 @@
+---
+# Common role - System baseline configuration
+# Amazon Linux 2 + Ansible 2.10 compatible
+
+# Bootstrap
+- name: Bootstrap Python
+  raw: yum install -y python3 python3-pip
+  changed_when: false
+  tags: bootstrap
+
+- name: Gather facts after bootstrap
+  setup:
+  tags: bootstrap
+
+# System baseline (legacy-safe)
+
+- name: Update all system packages
+  raw: yum update -y
+  tags: packages
+
+- name: Install base development tools
+  raw: yum install -y git wget curl vim unzip tar tree
+  tags: packages
+
+- name: Ensure chrony is installed
+  raw: yum install -y chrony
+  tags: system
+
+- name: Enable and start chronyd
+  command: systemctl enable --now chronyd
+  tags: system
+
+# Security hardening
+
+- name: Disable root login via SSH
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^PermitRootLogin"
+    line: "PermitRootLogin no"
+  notify: restart sshd
+  tags: security
+
+- name: Disable password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^PasswordAuthentication"
+    line: "PasswordAuthentication no"
+  notify: restart sshd
+  tags: security
+
+- name: Set custom MOTD banner
+  template:
+    src: motd.j2
+    dest: /etc/motd
+    mode: "0644"
+  tags: system

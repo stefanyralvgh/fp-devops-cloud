@@ -1,0 +1,80 @@
+---
+- name: Create backend user
+  user:
+    name: "{{ app_user }}"
+    comment: "Backend application user"
+    shell: /bin/bash
+    create_home: yes
+    system: no
+  become: yes
+
+- name: Create /opt directory
+  file:
+    path: "/opt"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: yes
+
+- name: Remove existing repository if present
+  file:
+    path: "/opt/devops-rampup"
+    state: absent
+  become: yes
+
+- name: Create /opt/devops-rampup directory with correct ownership
+  file:
+    path: "/opt/devops-rampup"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+  become: yes
+
+- name: Clone devops-rampup repository
+  git:
+    repo: "{{ app_repo_url }}"
+    dest: "/opt/devops-rampup"
+    version: "{{ app_repo_branch }}"
+    force: yes
+    accept_hostkey: yes
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+  become_user: "{{ app_user }}"
+  notify: restart pm2 app
+
+- name: Create symlink to movie-analyst-api
+  file:
+    src: "/opt/devops-rampup/{{ app_subdirectory }}"
+    dest: "{{ app_directory }}"
+    state: link
+    force: yes
+  become: yes
+
+- name: Verify package.json exists
+  stat:
+    path: "{{ app_directory }}/package.json"
+  register: package_json
+
+- name: Fail if package.json not found
+  fail:
+    msg: "package.json not found in {{ app_directory }}"
+  when: not package_json.stat.exists
+
+- name: Install application dependencies
+  community.general.npm:
+    path: "{{ app_directory }}"
+    state: present
+    production: yes
+  become_user: "{{ app_user }}"
+
+- name: Create PM2 ecosystem file
+  template:
+    src: ecosystem.config.js.j2
+    dest: "{{ app_directory }}/ecosystem.config.js"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0644"
+    force: yes
+  notify: restart pm2 app

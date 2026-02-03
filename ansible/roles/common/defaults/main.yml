@@ -1,0 +1,18 @@
+---
+# Default variables for common role
+
+# Timezone configuration
+common_timezone: "America/Bogota"
+
+# NTP service name (chronyd for Amazon Linux 2)
+common_ntp_service: chronyd
+
+# Base packages to install
+common_base_packages:
+  - git
+  - wget
+  - curl
+  - vim
+  - unzip
+  - tar
+  - tree

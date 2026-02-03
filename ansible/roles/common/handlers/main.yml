@@ -1,0 +1,19 @@
+---
+# Handlers for common role
+
+- name: restart chronyd
+  systemd:
+    name: chronyd
+    state: restarted
+
+# Handlers for common role
+
+- name: restart chronyd
+  systemd:
+    name: chronyd
+    state: restarted
+
+- name: restart sshd
+  systemd:
+    name: sshd
+    state: restarted

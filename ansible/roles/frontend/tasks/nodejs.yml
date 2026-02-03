@@ -1,0 +1,22 @@
+---
+- name: Download NodeSource setup script (Node 16 LTS)
+  raw: curl -fsSL https://rpm.nodesource.com/setup_16.x | bash -
+  become: yes
+  tags: nodejs
+
+- name: Install Node.js (includes npm)
+  raw: yum install -y nodejs
+  become: yes
+  tags: nodejs
+
+- name: Verify Node and npm
+  command: "{{ item }}"
+  loop:
+    - node --version
+    - npm --version
+  register: node_check
+  changed_when: false
+  tags: nodejs
+
+- debug:
+    var: node_check.stdout_lines
